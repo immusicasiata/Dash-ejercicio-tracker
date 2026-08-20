@@ -2,13 +2,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(
-    page_title="Berry-train", 
-    page_icon="🏋️‍♂️", 
-    layout="wide"
-)
-
+st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
@@ -65,6 +59,7 @@ if not daily_df.empty:
                 
                 if not hist_ex.empty:
                     max_weight_hist = hist_ex['Weight'].max()
+                    # Agrupar por peso y encontrar el máximo de reps histórico para cada uno
                     grouped_hist = hist_ex.groupby('Weight')['Reps'].max()
                     max_reps_per_weight = grouped_hist.to_dict()
                 
@@ -101,6 +96,7 @@ if not daily_df.empty:
                                 save_data(df)
                                 st.rerun()
                     else:
+                        # Distribución visual para dar espacio a los badges de récords
                         col_w, col_r, col_badges, col_btn = st.columns([1.8, 1.8, 1.4, 0.9])
                         curr_w = format_clean(row['Weight'])
                         curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
@@ -111,6 +107,7 @@ if not daily_df.empty:
                             new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
                         
                         with col_badges:
+                            # Lógica para mostrar indicadores dinámicos basados en el input actual o guardado
                             badges_html = ""
                             check_w = curr_w if curr_w > 0 else 0
                             check_r = curr_r if curr_r > 0 else 0
@@ -174,6 +171,7 @@ with st.expander("🔄 Copiar rutina de otro día"):
     s_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
     s_date = pd.to_datetime(s_date)
     
+    # Filtrar y previsualizar los ejercicios del día seleccionado antes de copiar
     source_entries = df[df['Date'].dt.date == s_date.date()].copy()
     
     if not source_entries.empty:
@@ -181,10 +179,11 @@ with st.expander("🔄 Copiar rutina de otro día"):
         preview_df = source_entries[['Category', 'Exercise', 'Weight', 'Reps', 'Distance']].drop_duplicates()
         st.dataframe(preview_df, use_container_width=True)
         
-        if st.button("Confirmar y copiar rutina"):
-            source_entries['Date'] = selected_date
-            save_data(pd.concat([df, source_entries], ignore_index=True))
-            st.success("Rutina copiada con éxito.")
+        if st.button("Copiar rutina"):
+            new_entries = source_entries.copy()
+            new_entries['Date'] = selected_date
+            save_data(pd.concat([df, new_entries], ignore_index=True))
+            st.success("¡Rutina copiada con éxito!")
             st.rerun()
     else:
-        st.warning("No se encontraron registros en la fecha seleccionada.")
+        st.warning("No hay registros en la fecha seleccionada.")
