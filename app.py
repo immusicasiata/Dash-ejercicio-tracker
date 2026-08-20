@@ -92,22 +92,14 @@ if not daily_df.empty:
                                 st.rerun()
                     else:
                         col1, col2, col_btn = st.columns([2, 2, 1])
-                        w_val = format_clean(row['Weight']) if pd.notna(row['Weight']) else 0
-                        is_int_w = isinstance(w_val, int)
-                        
+                        curr_w = format_clean(row['Weight']) if pd.notna(row['Weight']) else 0.0
                         curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                         
                         with col1:
-                            new_w = st.number_input(
-                                "Peso", 
-                                value=int(w_val) if is_int_w else float(w_val), 
-                                step=5.0, 
-                                format="%d" if is_int_w else "%.1f",
-                                key=f"w_{idx}_{selected_date}", 
-                                label_visibility="collapsed"
-                            )
+                            # step=5.0 para saltos de 5 en 5 en el peso
+                            new_w = st.number_input("Peso", value=float(curr_w), step=5.0, key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
                         with col2:
-                            new_r = st.number_input("Reps", value=int(curr_r), step=1, format="%d", key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
+                            new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
                         with col_btn:
                             if st.button("💾", key=f"save_w_{idx}_{selected_date}"):
                                 df.loc[idx, 'Weight'] = new_w if new_w > 0 else None
