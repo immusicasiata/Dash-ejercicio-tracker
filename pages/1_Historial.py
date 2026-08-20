@@ -60,12 +60,12 @@ if not df.empty and 'Date' in df.columns:
             st.divider()
             st.subheader(f"Resumen de la Sesión: {target_date.strftime('%d/%m/%Y')}")
             
-            # --- 1. BLOQUE DE FUERZA ---
+            # --- 1. BLOQUES DE FUERZA Y ALTA REPETICIÓN ---
             datos_fuerza = []
+            datos_alta_rep = []
             ejercicios_fuerza = df_sesion[df_sesion['Weight'].notna() & df_sesion['Reps'].notna()]['Exercise'].unique()
             
             for ex in ejercicios_fuerza:
-                # Todas las series del ejercicio en la fecha seleccionada
                 series_dia = df_sesion[df_sesion['Exercise'] == ex].copy()
                 
                 # Calcular 1RM para cada serie del día y extraer la mejor
@@ -75,24 +75,42 @@ if not df.empty and 'Date' in df.columns:
                 )
                 mejor_serie_dia = series_dia.loc[series_dia['1RM_dia'].idxmax()]
                 
-                # Historial completo para calcular el récord histórico (Best 1RM) y tendencia
-                ex_hist = df[df['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
-                ex_hist['1RM_calc'] = ex_hist.apply(
-                    lambda row: row['Weight'] / (1.0278 - (0.0278 * row['Reps'])) if row['Reps'] > 0 else row['Weight'], 
-                    axis=1
-                )
-                mejor_1rm_historico = ex_hist['1RM_calc'].max()
+                reps_dia = int(mejor_serie_dia['Reps'])
+                peso_dia = mejor_serie_dia['Weight']
                 
-                datos_fuerza.append({
-                    "Ejercicio": ex,
-                    "Peso (Día)": mejor_serie_dia['Weight'],
-                    "Reps (Día)": int(mejor_serie_dia['Reps']),
-                    "Best 1RM": round(mejor_1rm_historico, 1),
-                    "5RM (Obj)": round(mejor_1rm_historico * 0.87, 1),
-                    "10RM (Obj)": round(mejor_1rm_historico * 0.75, 1),
-                    "Estado": calcular_estado_tendencia(ex_hist)
-                })
+                # Historial completo para tendencia
+                ex_hist = df[df['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
+                estado_tendencia = calcular_estado_tendencia(ex_hist)
+                
+                # CONDICIONAL: Si supera las 20 repeticiones va a la tabla de Alta Repetición
+                if reps_dia > 20:
+                    volumen_total = peso_dia * reps_dia
+                    datos_alta_rep.append({
+                        "Ejercicio": ex,
+                        "Peso (Día)": peso_dia,
+                        "Reps (Día)": reps_dia,
+                        "Volumen Total": round(volumen_total, 1),
+                        "Estado": estado_tendencia
+                    })
+                else:
+                    # Cálculo normal de RM para fuerza tradicional
+                    ex_hist['1RM_calc'] = ex_hist.apply(
+                        lambda row: row['Weight'] / (1.0278 - (0.0278 * row['Reps'])) if row['Reps'] > 0 else row['Weight'], 
+                        axis=1
+                    )
+                    mejor_1rm_historico = ex_hist['1RM_calc'].max()
+                    
+                    datos_fuerza.append({
+                        "Ejercicio": ex,
+                        "Peso (Día)": peso_dia,
+                        "Reps (Día)": reps_dia,
+                        "Best 1RM": round(mejor_1rm_historico, 1),
+                        "5RM (Obj)": round(mejor_1rm_historico * 0.87, 1),
+                        "10RM (Obj)": round(mejor_1rm_historico * 0.75, 1),
+                        "Estado": estado_tendencia
+                    })
             
+            # Renderizar tabla de Fuerza Tradicional
             if datos_fuerza:
                 st.markdown("### 🏋️ Ejercicios de Fuerza")
                 st.dataframe(
@@ -103,6 +121,18 @@ if not df.empty and 'Date' in df.columns:
                         "Best 1RM": st.column_config.NumberColumn("Best 1RM", format="%.1f"),
                         "5RM (Obj)": st.column_config.NumberColumn("5RM (Obj)", format="%.1f"),
                         "10RM (Obj)": st.column_config.NumberColumn("10RM (Obj)", format="%.1f"),
+                    }
+                )
+
+            # Renderizar tabla de Alta Repetición / Resistencia
+            if datos_alta_rep:
+                st.markdown("### 🔥 Ejercicios de Alta Repetición / Resistencia (>20 Reps)")
+                st.dataframe(
+                    pd.DataFrame(datos_alta_rep).set_index("Ejercicio"),
+                    use_container_width=True,
+                    column_config={
+                        "Peso (Día)": st.column_config.NumberColumn("Peso (Día)", format="%.1f"),
+                        "Volumen Total": st.column_config.NumberColumn("Volumen Total", format="%.1f"),
                     }
                 )
 
