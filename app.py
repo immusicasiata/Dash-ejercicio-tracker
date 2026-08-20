@@ -9,9 +9,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Forzar el nombre de la página principal en el menú lateral
-pg = st.navigation([st.Page("app.py", title="Berry-train", icon="🏋️‍♂️")])
-
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
@@ -174,7 +171,7 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
 
 st.divider()
 with st.expander("🔄 Copiar rutina de otro día"):
-    s_date = st.date_input("Fecha a copiar:", pd.get_option("deprecation.showPyplotGlobalUse") if False else pd.to_datetime("today") - pd.Timedelta(days=1))
+    s_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
     if st.button("Copiar rutina"):
         new_entries = df[df['Date'].dt.date == pd.to_datetime(s_date).date()].copy()
         new_entries['Date'] = selected_date
