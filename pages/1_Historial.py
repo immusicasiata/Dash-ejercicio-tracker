@@ -1,101 +1,102 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from utils import load_data
+from utils import load_data, get_cached_date_summary
 
-st.set_page_config(page_title="Historial Avanzado", layout="wide")
-st.title("📊 Análisis de Entrenamiento Avanzado")
+st.set_page_config(page_title="Historial por Fecha", layout="wide")
+st.title("📊 Seguimiento de Fuerza por Sesión")
 
 df = load_data()
-if not df.empty:
-    categorias = sorted(df['Category'].dropna().unique())
-    selected_cat = st.selectbox("Filtro: Selecciona grupo muscular", categorias)
-    df_cat = df[df['Category'] == selected_cat].copy()
-    df_cat['Tonelaje'] = df_cat['Weight'] * df_cat['Reps']
+
+if not df.empty and 'Date' in df.columns:
+    # Obtener el resumen de fechas disponibles usando la función auxiliar de utils
+    date_summary = get_cached_date_summary(df)
     
-    # Pestañas de análisis
-    tab1, tab2, tab3 = st.tabs(["📈 Seguimiento y RM", "⚖️ Volumen y Fatiga", "⚠️ Alertas de Meseta"])
-
-    with tab1:
-        st.subheader(f"Estado de Fuerza Actual — {selected_cat}")
-        st.write("Estimaciones calculadas a partir del último registro de cada ejercicio:")
+    if date_summary:
+        dates_only = [item[0] for item in date_summary]
+        date_labels = [item[1] for item in date_summary]
         
-        ejercicios_cat = sorted(df_cat['Exercise'].dropna().unique())
-        datos_sesion = []
+        # Filtro principal por fecha
+        selected_label_idx = st.selectbox(
+            "Selecciona la fecha de entrenamiento a evaluar:", 
+            range(len(dates_only)), 
+            format_func=lambda x: date_labels[x]
+        )
+        target_date = pd.to_datetime(dates_only[selected_label_idx])
         
-        for ex in ejercicios_cat:
-            ex_data = df_cat[df_cat['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
+        # Filtrar datos de la fecha seleccionada
+        df_sesion = df[df['Date'].dt.date == target_date.date()].copy()
+        
+        if not df_sesion.empty:
+            st.divider()
+            st.subheader(f"Resumen de la Sesión: {target_date.strftime('%d/%m/%Y')}")
             
-            if not ex_data.empty:
-                last_row = ex_data.iloc[-1]
-                peso = last_row['Weight']
-                reps = last_row['Reps']
+            # Agrupar y recorrer por categoría (grupo muscular) dentro de esa fecha
+            categorias_sesion = sorted(df_sesion['Category'].dropna().unique())
+            
+            for cat in categorias_sesion:
+                st.markdown(f"### 💪 {cat}")
+                cat_df = df_sesion[df_sesion['Category'] == cat]
                 
-                # Fórmulas de estimación (Brzycki)
-                if reps > 0:
-                    rm1 = peso / (1.0278 - (0.0278 * reps))
-                else:
-                    rm1 = peso
+                datos_tabla = []
+                for ex in cat_df['Exercise'].dropna().unique():
+                    # Buscamos el histórico completo del ejercicio para calcular RM y meseta
+                    ex_hist = df[df['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
                     
-                rm5 = rm1 * 0.87
-                rm10 = rm1 * 0.75
+                    # Registro específico de este ejercicio en la fecha seleccionada
+                    ex_current = cat_df[cat_df['Exercise'] == ex].dropna(subset=['Weight', 'Reps'])
+                    
+                    if not ex_current.empty:
+                        # Tomamos el mejor set o el último set registrado en esa fecha
+                        last_row = ex_current.iloc[-1]
+                        peso = last_row['Weight']
+                        reps = last_row['Reps']
+                        
+                        # Fórmulas de estimación (Brzycki)
+                        if reps > 0:
+                            rm1 = peso / (1.0278 - (0.0278 * reps))
+                        else:
+                            rm1 = peso
+                            
+                        rm5 = rm1 * 0.87
+                        rm10 = rm1 * 0.75
+                        
+                        # Chequeo de Meseta (últimas 4 sesiones globales con mismo peso)
+                        es_meseta = False
+                        if len(ex_hist) >= 4:
+                            ultimos_pesos = ex_hist['Weight'].tail(4).values
+                            if len(set(ultimos_pesos)) == 1 and ultimos_pesos[0] > 0:
+                                es_meseta = True
+                        
+                        datos_tabla.append({
+                            "Ejercicio": ex,
+                            "Peso (kg)": peso,
+                            "Reps": int(reps),
+                            "1RM": round(rm1, 1),
+                            "5RM": round(rm5, 1),
+                            "10RM": round(rm10, 1),
+                            "Estado": "⚠️ Meseta" if es_meseta else "✅ Activo"
+                        })
                 
-                # Chequeo de Meseta (últimas 4 sesiones con mismo peso)
-                es_meseta = False
-                if len(ex_data) >= 4:
-                    ultimos_pesos = ex_data['Weight'].tail(4).values
-                    if len(set(ultimos_pesos)) == 1 and ultimos_pesos[0] > 0:
-                        es_meseta = True
+                if datos_tabla:
+                    df_resumen = pd.DataFrame(datos_tabla)
+                    st.dataframe(
+                        df_resumen.set_index("Ejercicio"),
+                        use_container_width=True,
+                        column_config={
+                            "Peso (kg)": st.column_config.NumberColumn("Peso (kg)", format="%.1f"),
+                            "Reps": st.column_config.NumberColumn("Reps", format="%d"),
+                            "1RM": st.column_config.NumberColumn("1RM (kg)", format="%.1f"),
+                            "5RM": st.column_config.NumberColumn("5RM (kg)", format="%.1f"),
+                            "10RM": st.column_config.NumberColumn("10RM (kg)", format="%.1f"),
+                        }
+                    )
+                else:
+                    st.info(f"No hay registros de fuerza con peso/reps en {cat} para esta fecha.")
                 
-                datos_sesion.append({
-                    "Ejercicio": ex,
-                    "Último Peso (kg)": peso,
-                    "Últimas Reps": int(reps),
-                    "1RM": round(rm1, 1),
-                    "5RM": round(rm5, 1),
-                    "10RM": round(rm10, 1),
-                    "Estado": "⚠️ Meseta" if es_meseta else "✅ Activo"
-                })
-        
-        if datos_sesion:
-            df_resumen = pd.DataFrame(datos_sesion)
-            st.dataframe(
-                df_resumen.set_index("Ejercicio"),
-                use_container_width=True,
-                column_config={
-                    "Último Peso (kg)": st.column_config.NumberColumn("Último Peso (kg)", format="%.1f"),
-                    "1RM": st.column_config.NumberColumn("1RM (kg)", format="%.1f"),
-                    "5RM": st.column_config.NumberColumn("5RM (kg)", format="%.1f"),
-                    "10RM": st.column_config.NumberColumn("10RM (kg)", format="%.1f"),
-                }
-            )
+                st.write("") # Espaciador entre categorías
         else:
-            st.info("No hay registros suficientes para calcular RM en este grupo muscular.")
-
-    with tab2:
-        st.subheader("Volumen Sostenido vs Fatiga")
-        # Media móvil para ver tendencia real sin el ruido diario
-        df_cat['Vol_Movil'] = df_cat.groupby('Exercise')['Tonelaje'].transform(lambda x: x.rolling(3, min_periods=1).mean())
-        
-        pivot_vol = df_cat.pivot_table(index='Date', columns='Exercise', values='Vol_Movil', aggfunc='sum')
-        st.area_chart(pivot_vol)
-        st.caption("Gráfico: Volumen acumulado suavizado (media móvil de 3 sesiones). Útil para ver si el tonelaje sube de forma sostenida sin fatiga excesiva.")
-
-    with tab3:
-        st.subheader("Detección Global de Estancamientos (Mesetas)")
-        st.write("Analizando las últimas 4 sesiones registradas por ejercicio:")
-        
-        meseta_encontrada = False
-        for ex in df_cat['Exercise'].unique():
-            ex_data = df_cat[df_cat['Exercise'] == ex].sort_values('Date')
-            if len(ex_data) >= 4:
-                ultimos_pesos = ex_data['Weight'].tail(4).values
-                if len(set(ultimos_pesos)) == 1 and ultimos_pesos[0] > 0: 
-                    st.warning(f"⚠️ Meseta detectada en **{ex}**: El peso se ha mantenido estancado en {ultimos_pesos[-1]}kg durante las últimas 4 sesiones.")
-                    meseta_encontrada = True
-        
-        if not meseta_encontrada:
-            st.success("¡Excelente! No se detectaron estancamientos críticos en este grupo muscular.")
-
+            st.warning("No hay registros en la fecha seleccionada.")
+    else:
+        st.info("No hay historial disponible.")
 else:
     st.info("No hay datos cargados para analizar.")
