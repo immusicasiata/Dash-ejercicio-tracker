@@ -13,43 +13,89 @@ if not df.empty:
     df_cat = df[df['Category'] == selected_cat].copy()
     df_cat['Tonelaje'] = df_cat['Weight'] * df_cat['Reps']
     
-    tab1, tab2, tab3 = st.tabs(["⚖️ Volumen y Fatiga", "⚠️ Alertas de Meseta", "📈 Seguimiento y RM"])
+    # Pestañas de análisis
+    tab1, tab2, tab3 = st.tabs(["📈 Seguimiento y RM", "⚖️ Volumen y Fatiga", "⚠️ Alertas de Meseta"])
 
     with tab1:
-        st.subheader("Volumen Sostenido vs Fatiga")
-        # Media móvil de 3 sesiones para ver la tendencia real sin el ruido del día a día
-        df_cat['Vol_Movil'] = df_cat.groupby('Exercise')['Tonelaje'].transform(lambda x: x.rolling(3, min_periods=1).mean())
-        st.area_chart(df_cat.pivot_table(index='Date', columns='Exercise', values='Vol_Movil', aggfunc='sum'))
-        st.caption("Gráfico: Volumen acumulado por sesión con suavizado de 3 sesiones. Si el área es plana o cae tras picos altos, hay fatiga excesiva.")
+        st.subheader(f"Estado de Fuerza Actual — {selected_cat}")
+        st.write("Estimaciones calculadas a partir del último registro de cada ejercicio:")
+        
+        ejercicios_cat = sorted(df_cat['Exercise'].dropna().unique())
+        datos_sesion = []
+        
+        for ex in ejercicios_cat:
+            ex_data = df_cat[df_cat['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
+            
+            if not ex_data.empty:
+                last_row = ex_data.iloc[-1]
+                peso = last_row['Weight']
+                reps = last_row['Reps']
+                
+                # Fórmulas de estimación (Brzycki)
+                if reps > 0:
+                    rm1 = peso / (1.0278 - (0.0278 * reps))
+                else:
+                    rm1 = peso
+                    
+                rm5 = rm1 * 0.87
+                rm10 = rm1 * 0.75
+                
+                # Chequeo de Meseta (últimas 4 sesiones con mismo peso)
+                es_meseta = False
+                if len(ex_data) >= 4:
+                    ultimos_pesos = ex_data['Weight'].tail(4).values
+                    if len(set(ultimos_pesos)) == 1 and ultimos_pesos[0] > 0:
+                        es_meseta = True
+                
+                datos_sesion.append({
+                    "Ejercicio": ex,
+                    "Último Peso (kg)": peso,
+                    "Últimas Reps": int(reps),
+                    "1RM": round(rm1, 1),
+                    "5RM": round(rm5, 1),
+                    "10RM": round(rm10, 1),
+                    "Estado": "⚠️ Meseta" if es_meseta else "✅ Activo"
+                })
+        
+        if datos_sesion:
+            df_resumen = pd.DataFrame(datos_sesion)
+            st.dataframe(
+                df_resumen.set_index("Ejercicio"),
+                use_container_width=True,
+                column_config={
+                    "Último Peso (kg)": st.column_config.NumberColumn("Último Peso (kg)", format="%.1f"),
+                    "1RM": st.column_config.NumberColumn("1RM (kg)", format="%.1f"),
+                    "5RM": st.column_config.NumberColumn("5RM (kg)", format="%.1f"),
+                    "10RM": st.column_config.NumberColumn("10RM (kg)", format="%.1f"),
+                }
+            )
+        else:
+            st.info("No hay registros suficientes para calcular RM en este grupo muscular.")
 
     with tab2:
-        st.subheader("Detección de Estancamientos (Mesetas)")
-        # Lógica: Si el peso no sube en 4 sesiones seguidas, es una meseta
+        st.subheader("Volumen Sostenido vs Fatiga")
+        # Media móvil para ver tendencia real sin el ruido diario
+        df_cat['Vol_Movil'] = df_cat.groupby('Exercise')['Tonelaje'].transform(lambda x: x.rolling(3, min_periods=1).mean())
+        
+        pivot_vol = df_cat.pivot_table(index='Date', columns='Exercise', values='Vol_Movil', aggfunc='sum')
+        st.area_chart(pivot_vol)
+        st.caption("Gráfico: Volumen acumulado suavizado (media móvil de 3 sesiones). Útil para ver si el tonelaje sube de forma sostenida sin fatiga excesiva.")
+
+    with tab3:
+        st.subheader("Detección Global de Estancamientos (Mesetas)")
+        st.write("Analizando las últimas 4 sesiones registradas por ejercicio:")
+        
+        meseta_encontrada = False
         for ex in df_cat['Exercise'].unique():
             ex_data = df_cat[df_cat['Exercise'] == ex].sort_values('Date')
             if len(ex_data) >= 4:
                 ultimos_pesos = ex_data['Weight'].tail(4).values
-                if len(set(ultimos_pesos)) == 1: # Mismo peso 4 veces seguidas
-                    st.warning(f"⚠️ Meseta detectada en **{ex}**: Peso estancado en {ultimos_pesos[-1]}kg")
+                if len(set(ultimos_pesos)) == 1 and ultimos_pesos[0] > 0: 
+                    st.warning(f"⚠️ Meseta detectada en **{ex}**: El peso se ha mantenido estancado en {ultimos_pesos[-1]}kg durante las últimas 4 sesiones.")
+                    meseta_encontrada = True
         
-    with tab3:
-        st.subheader("Estimaciones de Fuerza (RM)")
-        ejercicios_cat = sorted(df_cat['Exercise'].dropna().unique())
-        selected_ex = st.selectbox("Ejercicio:", ejercicios_cat)
-        
-        data_ex = df_cat[df_cat['Exercise'] == selected_ex].dropna(subset=['Weight', 'Reps'])
-        
-        # Fórmulas de estimación
-        # 1RM (Epley), 10RM (estimado inverso aprox)
-        data_ex['1RM'] = data_ex['Weight'] * (1 + data_ex['Reps'] / 30)
-        data_ex['10RM'] = data_ex['1RM'] * 0.75 
-        
-        st.line_chart(data_ex.set_index('Date')[['1RM', '10RM']])
-        
-        st.write("### Resumen actual")
-        last_session = data_ex.iloc[-1]
-        st.metric("1RM Estimado Actual", f"{last_session['1RM']:.1f} kg")
-        st.metric("10RM Estimado", f"{last_session['10RM']:.1f} kg")
+        if not meseta_encontrada:
+            st.success("¡Excelente! No se detectaron estancamientos críticos en este grupo muscular.")
 
 else:
-    st.info("No hay datos suficientes.")
+    st.info("No hay datos cargados para analizar.")
