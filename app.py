@@ -19,29 +19,40 @@ def load_data():
 st.title("📅 Panel de Entrenamiento")
 df = load_data()
 
-# Selector de fecha
-selected_date = st.date_input("Selecciona una fecha para ver tu entrenamiento:", pd.to_datetime("today"))
+selected_date = st.date_input("Selecciona una fecha:", pd.to_datetime("today"))
 selected_date = pd.to_datetime(selected_date)
 
-# Filtrar datos
 daily_df = df[df['Date'].dt.date == selected_date.date()]
 
 if not daily_df.empty:
     st.subheader(f"Entrenamiento del {selected_date.strftime('%d/%m/%Y')}")
     
-    # Agrupar por categoría (Grupo Muscular)
     for category in daily_df['Category'].unique():
         with st.expander(f"💪 {category}", expanded=True):
             cat_df = daily_df[daily_df['Category'] == category]
             
-            # Agrupar por ejercicio para ver las series
             for exercise in cat_df['Exercise'].unique():
                 ex_df = cat_df[cat_df['Exercise'] == exercise]
                 st.markdown(f"**{exercise}**")
                 
-                # Mostrar tabla simplificada de series
-                st.table(ex_df[['Weight', 'Weight Unit', 'Reps', 'Comment']].rename(
-                    columns={'Weight': 'Peso', 'Weight Unit': 'Unidad', 'Reps': 'Reps', 'Comment': 'Nota'}
-                ))
+                # LÓGICA CONDICIONAL: ¿Es fuerza o es cardio?
+                # Si hay datos en 'Distance' o 'Time', mostramos esas columnas
+                if ex_df['Distance'].notna().any() or ex_df['Time'].notna().any():
+                    cols_to_show = ['Distance', 'Distance Unit', 'Time']
+                    df_display = ex_df[cols_to_show].rename(columns={
+                        'Distance': 'Distancia', 
+                        'Distance Unit': 'Unidad', 
+                        'Time': 'Duración'
+                    })
+                else:
+                    # Si no hay cardio, mostramos peso y reps
+                    cols_to_show = ['Weight', 'Weight Unit', 'Reps']
+                    df_display = ex_df[cols_to_show].rename(columns={
+                        'Weight': 'Peso', 
+                        'Weight Unit': 'Unidad', 
+                        'Reps': 'Repeticiones'
+                    })
+                
+                st.table(df_display.reset_index(drop=True))
 else:
     st.info("No hay registros de entrenamiento para la fecha seleccionada.")
