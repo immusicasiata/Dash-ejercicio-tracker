@@ -7,13 +7,21 @@ st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
 # --- ESTILOS CSS PARA CELULARES (Aumentar tamaño en tablas y editores) ---
 st.markdown("""
 <style>
-    /* Aumentar tamaño de texto en las celdas del data_editor y tablas */
-    .stDataFrame div, .stDataEditor div, [data-testid="stDataFrame"] div, [data-testid="stDataEditor"] div {
-        font-size: 18px !important;
+    /* Agrandar el texto de los datos dentro de las celdas del editor */
+    div[data-baseweb="input"] input {
+        font-size: 22px !important;
+        font-weight: bold !important;
     }
-    /* Aumentar tamaño de los títulos de los headers en las tablas */
-    th {
+    
+    /* Agrandar el texto de las celdas de la tabla/editor antes de hacer clic */
+    [data-testid="stDataEditor"] div, [data-testid="stDataFrame"] div {
+        font-size: 20px !important;
+    }
+    
+    /* Agrandar los encabezados de las columnas (Peso, Repeticiones, etc.) */
+    [data-testid="stDataEditor"] th div, [data-testid="stDataFrame"] th div {
         font-size: 18px !important;
+        font-weight: bold !important;
     }
 </style>
 """, unsafe_allow_html=True)
