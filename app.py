@@ -18,6 +18,32 @@ def load_data():
     except: 
         return pd.DataFrame()
 
+# Función cacheada por 1 hora (3600 segundos) para optimizar el resumen histórico de fechas
+@st.cache_data(ttl=3600)
+def get_cached_date_summary(df_cached):
+    if df_cached.empty or 'Date' not in df_cached.columns:
+        return []
+    
+    valid_df = df_cached.dropna(subset=['Date']).copy()
+    valid_df['Date_Only'] = valid_df['Date'].dt.date
+    
+    date_summary = []
+    for d in sorted(valid_df['Date_Only'].unique(), reverse=True):
+        cats = valid_df[valid_df['Date_Only'] == d]['Category'].dropna().unique()
+        
+        # Evaluar un único icono por fecha
+        all_cats_str = " ".join([str(cat).lower() for cat in cats])
+        date_icon = ""
+        if any(k in all_cats_str for k in ['leg', 'pierna', 'cuadriceps', 'femorales', 'gluteo', 'pantorrilla', 'squat', 'lower']):
+            date_icon = "🦵 "
+        elif any(k in all_cats_str for k in ['chest', 'pecho', 'pectoral', 'back', 'espalda', 'dorsal', 'remo', 'pull', 'biceps', 'triceps', 'hombro', 'shoulder', 'upper', 'brazo', 'arm']):
+            date_icon = "🦾 "
+            
+        cats_str = ", ".join(cats) if len(cats) > 0 else "Sin categoría"
+        date_summary.append((d, f"{date_icon}{d.strftime('%d/%m/%Y')} — {cats_str}"))
+        
+    return date_summary
+
 def save_data(df):
     numeric_cols = ['Weight', 'Reps', 'Distance']
     for col in numeric_cols:
@@ -31,22 +57,6 @@ def format_clean(val):
         return float(val)
     except: 
         return 0.0
-
-# --- FUNCIÓN AUXILIAR PARA UN ICONO POR FECHA ---
-def get_date_icon(categories):
-    # Unimos todas las categorías del día en un solo texto en minúsculas para evaluar
-    all_cats_str = " ".join([str(cat).lower() for cat in categories])
-    
-    # Si hay alguna categoría de tren inferior
-    if any(k in all_cats_str for k in ['leg', 'pierna', 'cuadriceps', 'femorales', 'gluteo', 'pantorrilla', 'squat', 'lower']):
-        return "🦵 "
-    
-    # Si hay alguna categoría de tren superior
-    elif any(k in all_cats_str for k in ['chest', 'pecho', 'pectoral', 'back', 'espalda', 'dorsal', 'remo', 'pull', 'biceps', 'triceps', 'hombro', 'shoulder', 'upper', 'brazo', 'arm']):
-        return "🦾 "
-    
-    # Por defecto sin icono
-    return ""
 
 st.title("📅 Panel de Entrenamiento")
 df = load_data()
@@ -180,22 +190,8 @@ with st.expander("🔄 Copiar rutina de otro día"):
     s_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
     s_date = pd.to_datetime(s_date)
     
-    if not df.empty and 'Date' in df.columns:
-        valid_df = df.dropna(subset=['Date']).copy()
-        valid_df['Date_Only'] = valid_df['Date'].dt.date
-        
-        date_summary = []
-        for d in sorted(valid_df['Date_Only'].unique(), reverse=True):
-            cats = valid_df[valid_df['Date_Only'] == d]['Category'].dropna().unique()
-            
-            # Obtener UN SOLO icono evaluando el conjunto de categorías del día
-            date_icon = get_date_icon(cats)
-            
-            # Mostrar las categorías limpias sin icono individual
-            cats_str = ", ".join(cats) if len(cats) > 0 else "Sin categoría"
-            
-            # Formato final con un único icono al principio de la línea
-            date_summary.append((d, f"{date_icon}{d.strftime('%d/%m/%Y')} — {cats_str}"))
+    if not df.empty:
+        date_summary = get_cached_date_summary(df)
             
         if date_summary:
             dates_only = [item[0] for item in date_summary]
