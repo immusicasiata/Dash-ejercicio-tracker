@@ -100,7 +100,7 @@ if not daily_df.empty:
                         with col1:
                             new_w = st.number_input(
                                 "Peso", 
-                                value=float(w_val), 
+                                value=int(w_val) if is_int_w else float(w_val), 
                                 step=5.0, 
                                 format="%d" if is_int_w else "%.1f",
                                 key=f"w_{idx}_{selected_date}", 
