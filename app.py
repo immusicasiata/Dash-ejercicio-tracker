@@ -70,9 +70,8 @@ if not daily_df.empty:
                 else:
                     st.markdown(f"**{exercise}**")
                 
-                # 3. Interfaz táctil optimizada para celular por cada serie
+                # 3. Interfaz táctil optimizada por cada serie existente
                 for idx, row in ex_df.iterrows():
-                    # Determinamos si es fuerza (Peso/Reps) o cardio (Distancia/Tiempo)
                     is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
                     
                     if is_cardio:
@@ -97,7 +96,8 @@ if not daily_df.empty:
                         curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                         
                         with col1:
-                            new_w = st.number_input("Peso", value=float(curr_w), step=1.0, key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
+                            # step=5.0 para saltos de 5 en 5 en el peso
+                            new_w = st.number_input("Peso", value=float(curr_w), step=5.0, key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
                         with col2:
                             new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
                         with col_btn:
@@ -107,6 +107,28 @@ if not daily_df.empty:
                                 save_data(df)
                                 st.success("¡Guardado!")
                                 st.rerun()
+                
+                # 4. Botón para AGREGAR UNA NUEVA SERIE a este ejercicio
+                if st.button(f"➕ Agregar serie a {exercise}", key=f"add_row_{exercise}_{selected_date}"):
+                    is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
+                    
+                    new_row = {
+                        'Date': selected_date,
+                        'Exercise': exercise,
+                        'Category': category,
+                        'Weight': None,
+                        'Weight Unit': most_freq_unit if not is_cardio_ex else None,
+                        'Reps': None,
+                        'Distance': None,
+                        'Distance Unit': most_freq_unit if is_cardio_ex else None,
+                        'Time': None,
+                        'Comment': None
+                    }
+                    
+                    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                    save_data(df)
+                    st.success("¡Nueva serie añadida!")
+                    st.rerun()
                 
                 st.divider()
 else:
