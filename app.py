@@ -136,52 +136,49 @@ else:
 # --- NUEVA SECCIÓN: AGREGAR NUEVO EJERCICIO ---
 st.divider()
 with st.expander("➕ Agregar nuevo ejercicio al día"):
-    # Extraer categorías e historial de ejercicios previos del archivo para sugerencias inteligentes
+    # Extraer solo las categorías existentes en el DataFrame
     existing_categories = sorted(df['Category'].dropna().unique().tolist()) if 'Category' in df.columns else []
-    default_categories = ['Pecho', 'Espalda', 'Pierna', 'Hombro', 'Bícep', 'Trícep', 'Abdominales', 'Cardio']
-    all_categories = sorted(list(set(default_categories + existing_categories)))
     
-    selected_category = st.selectbox("Grupo Muscular (Categoría):", all_categories, key=f"new_ex_cat_{selected_date}")
-    
-    # Filtrar ejercicios históricos de esa categoría para sugerirlos
-    if not df.empty and 'Category' in df.columns and 'Exercise' in df.columns:
-        cat_history = df[df['Category'] == selected_category]['Exercise'].dropna().unique().tolist()
-    else:
-        cat_history = []
-    
-    options_exercise = sorted(list(set(cat_history))) + ["➕ Otro (Escribir nuevo)"]
-    chosen_exercise_option = st.selectbox("Ejercicio:", options_exercise, key=f"new_ex_name_{selected_date}")
-    
-    if chosen_exercise_option == "➕ Otro (Escribir nuevo)":
-        new_exercise_name = st.text_input("Nombre del nuevo ejercicio:", key=f"custom_ex_{selected_date}")
-    else:
-        new_exercise_name = chosen_exercise_option
+    if existing_categories:
+        selected_category = st.selectbox("Grupo Muscular (Categoría):", existing_categories, key=f"new_ex_cat_{selected_date}")
         
-    unit_choice = st.selectbox("Unidad de medida:", ["kg", "lbs", "Sin unidad"], key=f"new_unit_{selected_date}")
-    final_unit = unit_choice if unit_choice != "Sin unidad" else None
-
-    if st.button("Guardar e iniciar ejercicio", key=f"btn_save_new_exercise_{selected_date}"):
-        if new_exercise_name.strip():
-            # Crear la primera fila base para el nuevo ejercicio con 1 serie vacía lista para usarse
-            new_exercise_row = {
-                'Date': selected_date,
-                'Exercise': new_exercise_name.strip(),
-                'Category': selected_category,
-                'Weight': None,
-                'Weight Unit': final_unit,
-                'Reps': None,
-                'Distance': None,
-                'Distance Unit': None,
-                'Time': None,
-                'Comment': None
-            }
-            
-            df = pd.concat([df, pd.DataFrame([new_exercise_row])], ignore_index=True)
-            save_data(df)
-            st.success(f"¡Ejercicio '{new_exercise_name}' agregado correctamente!")
-            st.rerun()
+        # Filtrar ejercicios históricos de esa categoría para sugerirlos
+        cat_history = df[df['Category'] == selected_category]['Exercise'].dropna().unique().tolist()
+        
+        options_exercise = sorted(list(set(cat_history))) + ["➕ Otro (Escribir nuevo)"]
+        chosen_exercise_option = st.selectbox("Ejercicio:", options_exercise, key=f"new_ex_name_{selected_date}")
+        
+        if chosen_exercise_option == "➕ Otro (Escribir nuevo)":
+            new_exercise_name = st.text_input("Nombre del nuevo ejercicio:", key=f"custom_ex_{selected_date}")
         else:
-            st.warning("Por favor, ingresa o selecciona un nombre de ejercicio válido.")
+            new_exercise_name = chosen_exercise_option
+            
+        unit_choice = st.selectbox("Unidad de medida:", ["kg", "lbs", "Sin unidad"], key=f"new_unit_{selected_date}")
+        final_unit = unit_choice if unit_choice != "Sin unidad" else None
+
+        if st.button("Guardar e iniciar ejercicio", key=f"btn_save_new_exercise_{selected_date}"):
+            if new_exercise_name.strip():
+                new_exercise_row = {
+                    'Date': selected_date,
+                    'Exercise': new_exercise_name.strip(),
+                    'Category': selected_category,
+                    'Weight': None,
+                    'Weight Unit': final_unit,
+                    'Reps': None,
+                    'Distance': None,
+                    'Distance Unit': None,
+                    'Time': None,
+                    'Comment': None
+                }
+                
+                df = pd.concat([df, pd.DataFrame([new_exercise_row])], ignore_index=True)
+                save_data(df)
+                st.success(f"¡Ejercicio '{new_exercise_name}' agregado correctamente!")
+                st.rerun()
+            else:
+                st.warning("Por favor, ingresa un nombre de ejercicio válido.")
+    else:
+        st.warning("No hay categorías existentes. Primero debes registrar algún dato en tu hoja de cálculo.")
 
 # --- FUNCIONALIDAD DE COPIAR RUTINA ---
 st.divider()
