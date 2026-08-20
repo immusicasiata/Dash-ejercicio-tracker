@@ -44,12 +44,24 @@ daily_df = df[df['Date'].dt.date == selected_date.date()].copy()
 if not daily_df.empty:
     st.subheader(f"Registros del {selected_date.strftime('%d/%m/%Y')}")
     
+    # Agrupamos por categoría
     for category in daily_df['Category'].unique():
         with st.expander(f"💪 {category}", expanded=True):
             cat_df = daily_df[daily_df['Category'] == category]
             
             for exercise in cat_df['Exercise'].unique():
                 ex_df = cat_df[cat_df['Exercise'] == exercise]
+                
+                # --- CÁLCULO DE RÉCORDS Y MÁXIMOS HISTÓRICOS ---
+                hist_ex = df[df['Exercise'] == exercise].dropna(subset=['Weight', 'Reps'])
+                max_weight_hist = 0.0
+                max_reps_per_weight = {}
+                
+                if not hist_ex.empty:
+                    max_weight_hist = hist_ex['Weight'].max()
+                    # Agrupar por peso y encontrar el máximo de reps histórico para cada uno
+                    grouped_hist = hist_ex.groupby('Weight')['Reps'].max()
+                    max_reps_per_weight = grouped_hist.to_dict()
                 
                 # Obtener la unidad
                 most_freq_unit = ""
@@ -84,15 +96,37 @@ if not daily_df.empty:
                                 save_data(df)
                                 st.rerun()
                     else:
-                        col1, col2, col_btn = st.columns([2, 2, 1])
+                        # Distribución visual para dar espacio a los badges de récords
+                        col_w, col_r, col_badges, col_btn = st.columns([1.8, 1.8, 1.4, 0.9])
                         curr_w = format_clean(row['Weight'])
                         curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                         
-                        with col1:
-                            # step=5.0 para saltos, format="%.1f" para visualizar un decimal
+                        with col_w:
                             new_w = st.number_input("Peso", value=curr_w, step=5.0, format="%.1f", key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
-                        with col2:
+                        with col_r:
                             new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
+                        
+                        with col_badges:
+                            # Lógica para mostrar indicadores dinámicos basados en el input actual o guardado
+                            badges_html = ""
+                            # Comprobamos con el valor actual de la fila en el DF o el que se esté visualizando
+                            check_w = curr_w if curr_w > 0 else 0
+                            check_r = curr_r if curr_r > 0 else 0
+                            
+                            if check_w > 0 and check_w >= max_weight_hist and max_weight_hist > 0:
+                                badges_html += "🔥 <span style='color:#FF4B4B; font-weight:bold;'>Máx Peso</span> "
+                            
+                            if check_w > 0 and check_r > 0:
+                                historical_max_reps_for_w = max_reps_per_weight.get(check_w, 0)
+                                # Si las repeticiones actuales igualan o superan el récord histórico para ese peso específico (excluyendo el registro actual si ya estaba sumado, o de forma general)
+                                if check_r >= historical_max_reps_for_w and historical_max_reps_for_w > 0:
+                                    badges_html += "🏆 <span style='color:#FFD700; font-weight:bold;'>Récord Reps</span>"
+                            
+                            if badges_html:
+                                st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
+                            else:
+                                st.markdown("")
+
                         with col_btn:
                             if st.button("💾", key=f"save_w_{idx}_{selected_date}"):
                                 df.loc[idx, 'Weight'] = new_w if new_w > 0 else None
