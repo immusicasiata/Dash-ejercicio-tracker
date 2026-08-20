@@ -1,59 +1,11 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+from utils import load_data, save_data, get_cached_date_summary
 
 st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-@st.cache_data(ttl=60)
-def load_data():
-    try:
-        df = conn.read()
-        df['Date'] = pd.to_datetime(df['Date'])
-        numeric_cols = ['Weight', 'Reps', 'Distance']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df.dropna(how='all')
-    except: 
-        return pd.DataFrame()
-
-# Función cacheada por 1 hora (3600 segundos) para optimizar el resumen histórico de fechas
-@st.cache_data(ttl=3600)
-def get_cached_date_summary(df_cached):
-    if df_cached.empty or 'Date' not in df_cached.columns:
-        return []
-    
-    valid_df = df_cached.dropna(subset=['Date']).copy()
-    valid_df['Date_Only'] = valid_df['Date'].dt.date
-    
-    date_summary = []
-    for d in sorted(valid_df['Date_Only'].unique(), reverse=True):
-        cats = valid_df[valid_df['Date_Only'] == d]['Category'].dropna().unique()
-        
-        # Evaluar un único icono por fecha
-        all_cats_str = " ".join([str(cat).lower() for cat in cats])
-        date_icon = ""
-        if any(k in all_cats_str for k in ['leg', 'pierna', 'cuadriceps', 'femorales', 'gluteo', 'pantorrilla', 'squat', 'lower']):
-            date_icon = "🦵 "
-        elif any(k in all_cats_str for k in ['chest', 'pecho', 'pectoral', 'back', 'espalda', 'dorsal', 'remo', 'pull', 'biceps', 'triceps', 'hombro', 'shoulder', 'upper', 'brazo', 'arm']):
-            date_icon = "🦾 "
-            
-        cats_str = ", ".join(cats) if len(cats) > 0 else "Sin categoría"
-        date_summary.append((d, f"{date_icon}{d.strftime('%d/%m/%Y')} — {cats_str}"))
-        
-    return date_summary
-
-def save_data(df):
-    numeric_cols = ['Weight', 'Reps', 'Distance']
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    conn.update(data=df)
-    st.cache_data.clear()
 
 def format_clean(val):
-    try:
+    try: 
         return float(val)
     except: 
         return 0.0
@@ -93,10 +45,7 @@ if not daily_df.empty:
                             most_freq_unit = units.mode().iloc[0]
                             break
                 
-                if most_freq_unit and str(most_freq_unit).strip() != "":
-                    st.markdown(f"**{exercise} ({most_freq_unit})**")
-                else:
-                    st.markdown(f"**{exercise}**")
+                st.markdown(f"**{exercise} {f'({most_freq_unit})' if most_freq_unit else ''}**")
                 
                 for idx, row in ex_df.iterrows():
                     is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
@@ -141,8 +90,6 @@ if not daily_df.empty:
                             
                             if badges_html:
                                 st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
-                            else:
-                                st.markdown("")
 
                         with col_btn:
                             if st.button("💾", key=f"save_w_{idx}_{selected_date}"):
@@ -172,7 +119,6 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
         cat_history = df[df['Category'] == selected_category]['Exercise'].dropna().unique().tolist()
         options = sorted(list(set(cat_history))) + ["➕ Otro"]
         chosen = st.selectbox("Ejercicio:", options, key=f"new_ex_name_{selected_date}")
-        
         name = st.text_input("Nombre:", key=f"custom_ex_{selected_date}") if chosen == "➕ Otro" else chosen
         unit = st.selectbox("Unidad:", ["kg", "lbs", "Sin unidad"], key=f"new_unit_{selected_date}")
         
@@ -192,35 +138,23 @@ with st.expander("🔄 Copiar rutina de otro día"):
     
     if not df.empty:
         date_summary = get_cached_date_summary(df)
-            
         if date_summary:
             dates_only = [item[0] for item in date_summary]
             date_labels = [item[1] for item in date_summary]
-            
-            selected_label_idx = st.selectbox(
-                "Selecciona la fecha a copiar:", 
-                range(len(dates_only)), 
-                format_func=lambda x: date_labels[x],
-                key="copy_date_select"
-            )
+            selected_label_idx = st.selectbox("Selecciona fecha:", range(len(dates_only)), format_func=lambda x: date_labels[x], key="copy_date_select")
             target_date = pd.to_datetime(dates_only[selected_label_idx])
             
             source_entries = df[df['Date'].dt.date == target_date.date()].copy()
-            
             if not source_entries.empty:
-                st.write(f"Vista previa de la rutina del {target_date.strftime('%d/%m/%Y')}:")
-                preview_df = source_entries[['Category', 'Exercise', 'Weight', 'Reps', 'Distance']].drop_duplicates()
-                st.dataframe(preview_df, use_container_width=True, hide_index=True)
-                
+                st.write(f"Vista previa ({target_date.strftime('%d/%m/%Y')}):")
+                st.dataframe(source_entries[['Category', 'Exercise', 'Weight', 'Reps']].drop_duplicates(), use_container_width=True, hide_index=True)
                 if st.button("Copiar rutina seleccionada"):
                     new_entries = source_entries.copy()
                     new_entries['Date'] = selected_date
                     save_data(pd.concat([df, new_entries], ignore_index=True))
-                    st.success("¡Rutina copiada con éxito!")
+                    st.success("¡Copiado!")
                     st.rerun()
             else:
-                st.warning("No hay registros en la fecha seleccionada.")
+                st.warning("No hay registros en esa fecha.")
         else:
-            st.info("No hay historial disponible para copiar.")
-    else:
-        st.warning("No hay datos en el sistema.")
+            st.info("No hay historial disponible.")
