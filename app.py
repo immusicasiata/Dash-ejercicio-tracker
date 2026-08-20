@@ -46,7 +46,7 @@ if not daily_df.empty:
             for exercise in cat_df['Exercise'].unique():
                 ex_df = cat_df[cat_df['Exercise'] == exercise]
                 
-                # 1. Obtener la unidad con lógica robusta (revisando la fila actual y el histórico si fuera necesario)
+                # 1. Obtener la unidad con lógica robusta
                 most_freq_unit = ""
                 for unit_col in ['Weight Unit', 'Distance Unit']:
                     if unit_col in ex_df.columns:
@@ -55,7 +55,6 @@ if not daily_df.empty:
                             most_freq_unit = units.mode().iloc[0]
                             break
                 
-                # Si no está en el día pero sí en el histórico general del ejercicio
                 if not most_freq_unit and 'Exercise' in df.columns:
                     hist_ex = df[df['Exercise'] == exercise]
                     for unit_col in ['Weight Unit', 'Distance Unit']:
@@ -65,13 +64,13 @@ if not daily_df.empty:
                                 most_freq_unit = units.mode().iloc[0]
                                 break
 
-                # 2. Definir Título (solo muestra el paréntesis si la unidad no está vacía)
+                # 2. Definir Título
                 if most_freq_unit and str(most_freq_unit).strip() != "":
                     st.markdown(f"**{exercise} ({most_freq_unit})**")
                 else:
                     st.markdown(f"**{exercise}**")
                 
-                # 3. Selección estricta de columnas para mostrar (Solo Peso/Reps o Distancia/Duración)
+                # 3. Selección estricta de columnas
                 if ex_df['Distance'].notna().any() or ex_df['Time'].notna().any():
                     cols = ['Distance', 'Time']
                     display_names = {'Distance': 'Distancia', 'Time': 'Duración'}
@@ -79,14 +78,18 @@ if not daily_df.empty:
                     cols = ['Weight', 'Reps']
                     display_names = {'Weight': 'Peso', 'Reps': 'Repeticiones'}
                 
-                # Preparamos los datos limpios de decimales para el editor
                 to_edit = ex_df[cols].rename(columns=display_names)
                 to_edit = to_edit.map(format_clean)
                 
-                # Editor interactivo por ejercicio
-                edited_ex = st.data_editor(to_edit, use_container_width=True, key=f"editor_{exercise}_{selected_date}")
+                # 4. Editor interactivo con hide_index=True
+                edited_ex = st.data_editor(
+                    to_edit, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    key=f"editor_{exercise}_{selected_date}"
+                )
                 
-                # 4. Botón de guardado independiente para cada ejercicio
+                # 5. Botón de guardado
                 if st.button(f"Guardar {exercise}", key=f"btn_{exercise}"):
                     updated_ex = edited_ex.rename(columns={v: k for k, v in display_names.items()})
                     df.loc[ex_df.index, cols] = updated_ex
@@ -104,7 +107,11 @@ with st.expander("🔄 Copiar rutina de otro día"):
     
     if not source_df.empty:
         st.write("Vista previa de la rutina a copiar:")
-        st.dataframe(source_df[['Exercise', 'Category', 'Weight', 'Reps', 'Distance', 'Time']], use_container_width=True)
+        st.dataframe(
+            source_df[['Exercise', 'Category', 'Weight', 'Reps', 'Distance', 'Time']], 
+            use_container_width=True,
+            hide_index=True
+        )
         
         if st.button("Copiar esta rutina al día seleccionado"):
             new_entries = source_df.copy()
