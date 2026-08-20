@@ -96,8 +96,8 @@ if not daily_df.empty:
                         curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                         
                         with col1:
-                            # step=5.0 para saltos de 5 en 5 en el peso
-                            new_w = st.number_input("Peso", value=float(curr_w), step=5.0, key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
+                            # step=5.0 para saltos de 5 en 5, format="%.0f" para ocultar decimales sin conflictos
+                            new_w = st.number_input("Peso", value=float(curr_w), step=5.0, format="%.0f", key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
                         with col2:
                             new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
                         with col_btn:
