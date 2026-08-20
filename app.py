@@ -16,6 +16,14 @@ def load_data():
         st.error(f"Error al cargar datos: {e}")
         return pd.DataFrame()
 
+def format_clean(val):
+    """Convierte a entero si es un número, de lo contrario devuelve el string."""
+    try:
+        f_val = float(val)
+        return int(f_val) if f_val.is_integer() else f_val
+    except:
+        return val
+
 st.title("📅 Panel de Entrenamiento")
 df = load_data()
 
@@ -33,25 +41,30 @@ if not daily_df.empty:
             
             for exercise in cat_df['Exercise'].unique():
                 ex_df = cat_df[cat_df['Exercise'] == exercise]
-                st.markdown(f"**{exercise}**")
                 
-                # LÓGICA CONDICIONAL: ¿Es fuerza o es cardio?
-                # Si hay datos en 'Distance' o 'Time', mostramos esas columnas
+                # 1. Determinar la unidad más frecuente para el título
+                unit_cols = ['Weight Unit', 'Distance Unit']
+                all_units = ex_df[unit_cols].stack().dropna()
+                most_freq_unit = all_units.mode().iloc[0] if not all_units.empty else ""
+                
+                # 2. Definir Título
+                title = f"{exercise} ({most_freq_unit})" if most_freq_unit else exercise
+                st.markdown(f"**{title}**")
+                
+                # 3. Preparar columnas y limpiar formato
                 if ex_df['Distance'].notna().any() or ex_df['Time'].notna().any():
-                    cols_to_show = ['Distance', 'Distance Unit', 'Time']
-                    df_display = ex_df[cols_to_show].rename(columns={
+                    df_display = ex_df[['Distance', 'Time']].rename(columns={
                         'Distance': 'Distancia', 
-                        'Distance Unit': 'Unidad', 
                         'Time': 'Duración'
                     })
                 else:
-                    # Si no hay cardio, mostramos peso y reps
-                    cols_to_show = ['Weight', 'Weight Unit', 'Reps']
-                    df_display = ex_df[cols_to_show].rename(columns={
+                    df_display = ex_df[['Weight', 'Reps']].rename(columns={
                         'Weight': 'Peso', 
-                        'Weight Unit': 'Unidad', 
                         'Reps': 'Repeticiones'
                     })
+                
+                # Aplicar redondeo/formateo a todo el DF
+                df_display = df_display.applymap(format_clean)
                 
                 st.table(df_display.reset_index(drop=True))
 else:
