@@ -7,6 +7,10 @@ st.set_page_config(page_title="Historial por Fecha", layout="wide")
 st.title("📊 Seguimiento de Sesión")
 
 def calcular_estado_tendencia(ex_hist):
+    """
+    Normaliza a KG y calcula la tendencia de las últimas 4 sesiones 
+    mediante regresión lineal (umbral de 0.45 kg ~ 1 lb).
+    """
     if len(ex_hist) < 4:
         return "🌱 Nuevo / Pocos datos"
     
@@ -61,28 +65,46 @@ if not df.empty and 'Date' in df.columns:
             ejercicios_fuerza = df_sesion[df_sesion['Weight'].notna() & df_sesion['Reps'].notna()]['Exercise'].unique()
             
             for ex in ejercicios_fuerza:
-                ex_hist = df[df['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
-                last_row = df_sesion[df_sesion['Exercise'] == ex].iloc[-1]
+                # Todas las series del ejercicio en la fecha seleccionada
+                series_dia = df_sesion[df_sesion['Exercise'] == ex].copy()
                 
+                # Calcular 1RM para cada serie del día y extraer la mejor
+                series_dia['1RM_dia'] = series_dia.apply(
+                    lambda row: row['Weight'] / (1.0278 - (0.0278 * row['Reps'])) if row['Reps'] > 0 else row['Weight'], 
+                    axis=1
+                )
+                mejor_serie_dia = series_dia.loc[series_dia['1RM_dia'].idxmax()]
+                
+                # Historial completo para calcular el récord histórico (Best 1RM) y tendencia
+                ex_hist = df[df['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
                 ex_hist['1RM_calc'] = ex_hist.apply(
                     lambda row: row['Weight'] / (1.0278 - (0.0278 * row['Reps'])) if row['Reps'] > 0 else row['Weight'], 
                     axis=1
                 )
-                mejor_1rm = ex_hist['1RM_calc'].max()
+                mejor_1rm_historico = ex_hist['1RM_calc'].max()
                 
                 datos_fuerza.append({
                     "Ejercicio": ex,
-                    "Peso (Día)": last_row['Weight'],
-                    "Reps (Día)": int(last_row['Reps']),
-                    "Best 1RM": round(mejor_1rm, 1),
-                    "5RM (Obj)": round(mejor_1rm * 0.87, 1),
-                    "10RM (Obj)": round(mejor_1rm * 0.75, 1),
+                    "Peso (Día)": mejor_serie_dia['Weight'],
+                    "Reps (Día)": int(mejor_serie_dia['Reps']),
+                    "Best 1RM": round(mejor_1rm_historico, 1),
+                    "5RM (Obj)": round(mejor_1rm_historico * 0.87, 1),
+                    "10RM (Obj)": round(mejor_1rm_historico * 0.75, 1),
                     "Estado": calcular_estado_tendencia(ex_hist)
                 })
             
             if datos_fuerza:
                 st.markdown("### 🏋️ Ejercicios de Fuerza")
-                st.dataframe(pd.DataFrame(datos_fuerza).set_index("Ejercicio"), use_container_width=True)
+                st.dataframe(
+                    pd.DataFrame(datos_fuerza).set_index("Ejercicio"),
+                    use_container_width=True,
+                    column_config={
+                        "Peso (Día)": st.column_config.NumberColumn("Peso (Día)", format="%.1f"),
+                        "Best 1RM": st.column_config.NumberColumn("Best 1RM", format="%.1f"),
+                        "5RM (Obj)": st.column_config.NumberColumn("5RM (Obj)", format="%.1f"),
+                        "10RM (Obj)": st.column_config.NumberColumn("10RM (Obj)", format="%.1f"),
+                    }
+                )
 
             # --- 2. BLOQUE DE CARDIO ---
             datos_cardio = []
@@ -90,11 +112,14 @@ if not df.empty and 'Date' in df.columns:
             
             for ex in ejercicios_cardio:
                 row = df_sesion[df_sesion['Exercise'] == ex].iloc[-1]
+                distancia = row.get('Distance')
+                tiempo = row.get('Time', '-')
+                
                 datos_cardio.append({
                     "Ejercicio": ex,
-                    "Distancia": f"{row['Distance']} km" if pd.notna(row.get('Distance')) else "-",
-                    "Duración": str(row.get('Time', '-')),
-                    "Detalle": f"{row.get('Distance')} km en {row.get('Time')}" if pd.notna(row.get('Distance')) else "-"
+                    "Distancia": f"{distancia} km" if pd.notna(distancia) else "-",
+                    "Duración": str(tiempo),
+                    "Detalle": f"{distancia} km en {tiempo}" if pd.notna(distancia) else "-"
                 })
                 
             if datos_cardio:
