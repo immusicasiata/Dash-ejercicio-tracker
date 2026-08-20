@@ -69,3 +69,36 @@ if not daily_df.empty:
                 st.table(df_display.reset_index(drop=True))
 else:
     st.info("No hay registros de entrenamiento para la fecha seleccionada.")
+
+# --- FUNCIONALIDAD: DUPLICAR RUTINA ---
+st.divider()
+with st.expander("🔄 Copiar rutina de otro día"):
+    source_date = st.date_input("Seleccionar fecha para copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
+    source_df = df[df['Date'].dt.date == source_date]
+    
+    if not source_df.empty:
+        st.write(f"Rutina encontrada para el {source_date.strftime('%d/%m/%Y')}. Edita los valores y presiona el botón:")
+        
+        # Filtramos solo las columnas editables
+        editable_df = source_df[['Exercise', 'Category', 'Weight', 'Reps', 'Distance', 'Time']].copy()
+        
+        # El data_editor permite al usuario cambiar los valores antes de guardar
+        edited_df = st.data_editor(editable_df, use_container_width=True)
+        
+        if st.button("Guardar esta rutina hoy"):
+            # Creamos el nuevo DF con la fecha de hoy
+            today = pd.to_datetime("today").normalize()
+            new_entries = edited_df.copy()
+            new_entries['Date'] = today
+            
+            # Reincorporamos las unidades (opcional: aquí simplemente las mantenemos o las ponemos por defecto)
+            # Para simplicidad, las unimos con el DF original para mantener la estructura
+            df_updated = pd.concat([df, new_entries], ignore_index=True)
+            
+            # Guardar
+            conn.update(data=df_updated)
+            st.cache_data.clear()
+            st.success("¡Rutina copiada y guardada para hoy!")
+            st.rerun()
+    else:
+        st.warning("No hay registros en la fecha seleccionada.")
