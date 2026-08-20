@@ -172,8 +172,19 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
 st.divider()
 with st.expander("🔄 Copiar rutina de otro día"):
     s_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
-    if st.button("Copiar rutina"):
-        new_entries = df[df['Date'].dt.date == pd.to_datetime(s_date).date()].copy()
-        new_entries['Date'] = selected_date
-        save_data(pd.concat([df, new_entries], ignore_index=True))
-        st.rerun()
+    s_date = pd.to_datetime(s_date)
+    
+    source_entries = df[df['Date'].dt.date == s_date.date()].copy()
+    
+    if not source_entries.empty:
+        st.write(f"Ejercicios encontrados el {s_date.strftime('%d/%m/%Y')}:")
+        preview_df = source_entries[['Category', 'Exercise', 'Weight', 'Reps', 'Distance']].drop_duplicates()
+        st.dataframe(preview_df, use_container_width=True)
+        
+        if st.button("Confirmar y copiar rutina"):
+            source_entries['Date'] = selected_date
+            save_data(pd.concat([df, source_entries], ignore_index=True))
+            st.success("Rutina copiada con éxito.")
+            st.rerun()
+    else:
+        st.warning("No se encontraron registros en la fecha seleccionada.")
