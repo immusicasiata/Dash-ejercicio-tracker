@@ -17,7 +17,7 @@ def load_data():
         return pd.DataFrame()
 
 def format_clean(val):
-    """Convierte a entero si es un número, de lo contrario devuelve el string."""
+    """Convierte a entero si es un número entero exacto, de lo contrario lo deja igual."""
     try:
         f_val = float(val)
         return int(f_val) if f_val.is_integer() else f_val
@@ -47,11 +47,11 @@ if not daily_df.empty:
                 all_units = ex_df[unit_cols].stack().dropna()
                 most_freq_unit = all_units.mode().iloc[0] if not all_units.empty else ""
                 
-                # 2. Definir Título
+                # 2. Definir Título con la unidad entre paréntesis
                 title = f"{exercise} ({most_freq_unit})" if most_freq_unit else exercise
                 st.markdown(f"**{title}**")
                 
-                # 3. Preparar columnas y limpiar formato
+                # 3. Preparar columnas según sea fuerza o cardio
                 if ex_df['Distance'].notna().any() or ex_df['Time'].notna().any():
                     df_display = ex_df[['Distance', 'Time']].rename(columns={
                         'Distance': 'Distancia', 
@@ -63,8 +63,8 @@ if not daily_df.empty:
                         'Reps': 'Repeticiones'
                     })
                 
-                # Aplicar redondeo/formateo a todo el DF
-                df_display = df_display.applymap(format_clean)
+                # Aplicar formato sin decimales usando .map() (compatible con pandas moderno)
+                df_display = df_display.map(format_clean)
                 
                 st.table(df_display.reset_index(drop=True))
 else:
