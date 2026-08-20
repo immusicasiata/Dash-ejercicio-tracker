@@ -3,6 +3,21 @@ import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
+
+# --- ESTILOS CSS PARA CELULARES (Aumentar tamaño en tablas y editores) ---
+st.markdown("""
+<style>
+    /* Aumentar tamaño de texto en las celdas del data_editor y tablas */
+    .stDataFrame div, .stDataEditor div, [data-testid="stDataFrame"] div, [data-testid="stDataEditor"] div {
+        font-size: 18px !important;
+    }
+    /* Aumentar tamaño de los títulos de los headers en las tablas */
+    th {
+        font-size: 18px !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
