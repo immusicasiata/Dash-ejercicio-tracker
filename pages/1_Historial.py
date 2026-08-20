@@ -8,7 +8,7 @@ st.title("📊 Seguimiento de Sesión")
 
 def calcular_estado_tendencia(ex_hist):
     if len(ex_hist) < 4:
-        return "🌱 🌱 Pocos datos"
+        return "🌱 Pocos datos"
     
     ultimas_4 = ex_hist.dropna(subset=['Weight']).tail(4)
     if len(ultimas_4) < 4:
@@ -63,7 +63,6 @@ if not df.empty and 'Date' in df.columns:
             for ex in ejercicios_fuerza:
                 series_dia = df_sesion[df_sesion['Exercise'] == ex].copy()
                 
-                # Mejor esfuerzo del día basado en 1RM estimado
                 series_dia['1RM_dia'] = series_dia.apply(
                     lambda row: row['Weight'] / (1.0278 - (0.0278 * row['Reps'])) if row['Reps'] > 0 else row['Weight'], 
                     axis=1
@@ -73,15 +72,11 @@ if not df.empty and 'Date' in df.columns:
                 reps_dia = int(mejor_serie_dia['Reps'])
                 peso_dia = mejor_serie_dia['Weight']
                 
-                # Historial completo
                 ex_hist = df[df['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
                 estado_tendencia = calcular_estado_tendencia(ex_hist)
                 
-                # CONDICIONAL: Mayor a 20 repeticiones (Alta Repetición / Resistencia)
                 if reps_dia > 20:
                     volumen_dia = peso_dia * reps_dia
-                    
-                    # Calcular volumen histórico para cada sesión pasada (Peso * Reps)
                     ex_hist['Volumen_hist'] = ex_hist['Weight'] * ex_hist['Reps']
                     mejor_volumen_historico = ex_hist['Volumen_hist'].max()
                     
@@ -90,11 +85,10 @@ if not df.empty and 'Date' in df.columns:
                         "Peso (Día)": peso_dia,
                         "Reps (Día)": reps_dia,
                         "Volumen (Día)": round(volumen_dia, 1),
-                        "Best Volumen (Histórico)": round(mejor_volumen_historico, 1),
+                        "Best Volumen": round(mejor_volumen_historico, 1),
                         "Estado": estado_tendencia
                     })
                 else:
-                    # Fuerza Tradicional
                     ex_hist['1RM_calc'] = ex_hist.apply(
                         lambda row: row['Weight'] / (1.0278 - (0.0278 * row['Reps'])) if row['Reps'] > 0 else row['Weight'], 
                         axis=1
@@ -106,37 +100,33 @@ if not df.empty and 'Date' in df.columns:
                         "Peso (Día)": peso_dia,
                         "Reps (Día)": reps_dia,
                         "Best 1RM": round(mejor_1rm_historico, 1),
-                        "5RM (Obj)": round(mejor_1rm_historico * 0.87, 1),
-                        "10RM (Obj)": round(mejor_1rm_historico * 0.75, 1),
+                        "5RM": round(mejor_1rm_historico * 0.87, 1),
+                        "10RM": round(mejor_1rm_historico * 0.75, 1),
                         "Estado": estado_tendencia
                     })
             
-            # Renderizar Fuerza Tradicional
+            # --- RENDERIZAR FUERZA TRADICIONAL EN TARJETAS ---
             if datos_fuerza:
                 st.markdown("### 🏋️ Ejercicios de Fuerza")
-                st.dataframe(
-                    pd.DataFrame(datos_fuerza).set_index("Ejercicio"),
-                    use_container_width=True,
-                    column_config={
-                        "Peso (Día)": st.column_config.NumberColumn("Peso (Día)", format="%.1f"),
-                        "Best 1RM": st.column_config.NumberColumn("Best 1RM", format="%.1f"),
-                        "5RM (Obj)": st.column_config.NumberColumn("5RM (Obj)", format="%.1f"),
-                        "10RM (Obj)": st.column_config.NumberColumn("10RM (Obj)", format="%.1f"),
-                    }
-                )
+                for item in datos_fuerza:
+                    with st.container(border=True):
+                        st.markdown(f"**{item['Ejercicio']}** &nbsp;&nbsp; `{item['Estado']}`")
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Peso Día", f"{item['Peso (Día)']} kg/lb")
+                        c2.metric("Reps Día", item['Reps (Día)'])
+                        c3.metric("Best 1RM", f"{item['Best 1RM']}")
+                        c4.metric("5RM / 10RM", f"{item['5RM']} / {item['10RM']}")
 
-            # Renderizar Alta Repetición
+            # --- RENDERIZAR ALTA REPETICIÓN EN TARJETAS ---
             if datos_alta_rep:
-                st.markdown("### 🔥 Ejercicios de Alta Repetición / Resistencia (>20 Reps)")
-                st.dataframe(
-                    pd.DataFrame(datos_alta_rep).set_index("Ejercicio"),
-                    use_container_width=True,
-                    column_config={
-                        "Peso (Día)": st.column_config.NumberColumn("Peso (Día)", format="%.1f"),
-                        "Volumen (Día)": st.column_config.NumberColumn("Volumen (Día)", format="%.1f"),
-                        "Best Volumen (Histórico)": st.column_config.NumberColumn("Best Volumen (Histórico)", format="%.1f"),
-                    }
-                )
+                st.markdown("### 🔥 Alta Repetición / Resistencia (>20 Reps)")
+                for item in datos_alta_rep:
+                    with st.container(border=True):
+                        st.markdown(f"**{item['Ejercicio']}** &nbsp;&nbsp; `{item['Estado']}`")
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Peso / Reps", f"{item['Peso (Día)']} × {item['Reps (Día)']}")
+                        c2.metric("Volumen Día", f"{item['Volumen (Día)']}")
+                        c3.metric("Best Volumen", f"{item['Best Volumen']}")
 
             # --- 2. BLOQUE DE CARDIO ---
             datos_cardio = []
@@ -150,13 +140,17 @@ if not df.empty and 'Date' in df.columns:
                 datos_cardio.append({
                     "Ejercicio": ex,
                     "Distancia": f"{distancia} km" if pd.notna(distancia) else "-",
-                    "Duración": str(tiempo),
-                    "Detalle": f"{distancia} km en {tiempo}" if pd.notna(distancia) else "-"
+                    "Duración": str(tiempo)
                 })
                 
             if datos_cardio:
                 st.markdown("### 🏃 Ejercicios de Cardio / Resistencia")
-                st.dataframe(pd.DataFrame(datos_cardio).set_index("Ejercicio"), use_container_width=True)
+                for item in datos_cardio:
+                    with st.container(border=True):
+                        st.markdown(f"**{item['Ejercicio']}**")
+                        c1, c2 = st.columns(2)
+                        c1.metric("Distancia", item['Distancia'])
+                        c2.metric("Duración", item['Duración'])
                 
         else:
             st.warning("No hay registros en la fecha seleccionada.")
