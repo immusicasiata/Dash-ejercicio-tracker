@@ -72,6 +72,10 @@ if not df.empty and 'Date' in df.columns:
                 reps_dia = int(mejor_serie_dia['Reps'])
                 peso_dia = mejor_serie_dia['Weight']
                 
+                # Extraer la unidad real del registro (ej. 'kg' o 'lb')
+                unidad_dia = str(mejor_serie_dia.get('Weight Unit', 'lb')).lower()
+                unidad_label = "lb" if "lb" in unidad_dia else "kg"
+                
                 ex_hist = df[df['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
                 estado_tendencia = calcular_estado_tendencia(ex_hist)
                 
@@ -83,6 +87,7 @@ if not df.empty and 'Date' in df.columns:
                     datos_alta_rep.append({
                         "Ejercicio": ex,
                         "Peso (Día)": peso_dia,
+                        "Unidad": unidad_label,
                         "Reps (Día)": reps_dia,
                         "Volumen (Día)": round(volumen_dia, 1),
                         "Best Volumen": round(mejor_volumen_historico, 1),
@@ -98,6 +103,7 @@ if not df.empty and 'Date' in df.columns:
                     datos_fuerza.append({
                         "Ejercicio": ex,
                         "Peso (Día)": peso_dia,
+                        "Unidad": unidad_label,
                         "Reps (Día)": reps_dia,
                         "Best 1RM": round(mejor_1rm_historico, 1),
                         "5RM": round(mejor_1rm_historico * 0.87, 1),
@@ -112,7 +118,7 @@ if not df.empty and 'Date' in df.columns:
                     with st.container(border=True):
                         st.markdown(f"**{item['Ejercicio']}** &nbsp;&nbsp; `{item['Estado']}`")
                         c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("Peso Día", f"{item['Peso (Día)']} kg/lb")
+                        c1.metric("Peso Día", f"{item['Peso (Día)']} {item['Unidad']}")
                         c2.metric("Reps Día", item['Reps (Día)'])
                         c3.metric("Best 1RM", f"{item['Best 1RM']}")
                         c4.metric("5RM / 10RM", f"{item['5RM']} / {item['10RM']}")
@@ -124,7 +130,7 @@ if not df.empty and 'Date' in df.columns:
                     with st.container(border=True):
                         st.markdown(f"**{item['Ejercicio']}** &nbsp;&nbsp; `{item['Estado']}`")
                         c1, c2, c3 = st.columns(3)
-                        c1.metric("Peso / Reps", f"{item['Peso (Día)']} × {item['Reps (Día)']}")
+                        c1.metric("Peso / Reps", f"{item['Peso (Día)']} {item['Unidad']} × {item['Reps (Día)']}")
                         c2.metric("Volumen Día", f"{item['Volumen (Día)']}")
                         c3.metric("Best Volumen", f"{item['Best Volumen']}")
 
