@@ -7,12 +7,8 @@ st.set_page_config(page_title="Historial por Fecha", layout="wide")
 st.title("📊 Seguimiento de Sesión")
 
 def calcular_estado_tendencia(ex_hist):
-    """
-    Normaliza a KG y calcula la tendencia de las últimas 4 sesiones 
-    mediante regresión lineal (umbral de 0.45 kg ~ 1 lb).
-    """
     if len(ex_hist) < 4:
-        return "🌱 Nuevo / Pocos datos"
+        return "🌱 🌱 Pocos datos"
     
     ultimas_4 = ex_hist.dropna(subset=['Weight']).tail(4)
     if len(ultimas_4) < 4:
@@ -60,7 +56,6 @@ if not df.empty and 'Date' in df.columns:
             st.divider()
             st.subheader(f"Resumen de la Sesión: {target_date.strftime('%d/%m/%Y')}")
             
-            # --- 1. BLOQUES DE FUERZA Y ALTA REPETICIÓN ---
             datos_fuerza = []
             datos_alta_rep = []
             ejercicios_fuerza = df_sesion[df_sesion['Weight'].notna() & df_sesion['Reps'].notna()]['Exercise'].unique()
@@ -68,7 +63,7 @@ if not df.empty and 'Date' in df.columns:
             for ex in ejercicios_fuerza:
                 series_dia = df_sesion[df_sesion['Exercise'] == ex].copy()
                 
-                # Calcular 1RM para cada serie del día y extraer la mejor
+                # Mejor esfuerzo del día basado en 1RM estimado
                 series_dia['1RM_dia'] = series_dia.apply(
                     lambda row: row['Weight'] / (1.0278 - (0.0278 * row['Reps'])) if row['Reps'] > 0 else row['Weight'], 
                     axis=1
@@ -78,22 +73,28 @@ if not df.empty and 'Date' in df.columns:
                 reps_dia = int(mejor_serie_dia['Reps'])
                 peso_dia = mejor_serie_dia['Weight']
                 
-                # Historial completo para tendencia
+                # Historial completo
                 ex_hist = df[df['Exercise'] == ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
                 estado_tendencia = calcular_estado_tendencia(ex_hist)
                 
-                # CONDICIONAL: Si supera las 20 repeticiones va a la tabla de Alta Repetición
+                # CONDICIONAL: Mayor a 20 repeticiones (Alta Repetición / Resistencia)
                 if reps_dia > 20:
-                    volumen_total = peso_dia * reps_dia
+                    volumen_dia = peso_dia * reps_dia
+                    
+                    # Calcular volumen histórico para cada sesión pasada (Peso * Reps)
+                    ex_hist['Volumen_hist'] = ex_hist['Weight'] * ex_hist['Reps']
+                    mejor_volumen_historico = ex_hist['Volumen_hist'].max()
+                    
                     datos_alta_rep.append({
                         "Ejercicio": ex,
                         "Peso (Día)": peso_dia,
                         "Reps (Día)": reps_dia,
-                        "Volumen Total": round(volumen_total, 1),
+                        "Volumen (Día)": round(volumen_dia, 1),
+                        "Best Volumen (Histórico)": round(mejor_volumen_historico, 1),
                         "Estado": estado_tendencia
                     })
                 else:
-                    # Cálculo normal de RM para fuerza tradicional
+                    # Fuerza Tradicional
                     ex_hist['1RM_calc'] = ex_hist.apply(
                         lambda row: row['Weight'] / (1.0278 - (0.0278 * row['Reps'])) if row['Reps'] > 0 else row['Weight'], 
                         axis=1
@@ -110,7 +111,7 @@ if not df.empty and 'Date' in df.columns:
                         "Estado": estado_tendencia
                     })
             
-            # Renderizar tabla de Fuerza Tradicional
+            # Renderizar Fuerza Tradicional
             if datos_fuerza:
                 st.markdown("### 🏋️ Ejercicios de Fuerza")
                 st.dataframe(
@@ -124,7 +125,7 @@ if not df.empty and 'Date' in df.columns:
                     }
                 )
 
-            # Renderizar tabla de Alta Repetición / Resistencia
+            # Renderizar Alta Repetición
             if datos_alta_rep:
                 st.markdown("### 🔥 Ejercicios de Alta Repetición / Resistencia (>20 Reps)")
                 st.dataframe(
@@ -132,7 +133,8 @@ if not df.empty and 'Date' in df.columns:
                     use_container_width=True,
                     column_config={
                         "Peso (Día)": st.column_config.NumberColumn("Peso (Día)", format="%.1f"),
-                        "Volumen Total": st.column_config.NumberColumn("Volumen Total", format="%.1f"),
+                        "Volumen (Día)": st.column_config.NumberColumn("Volumen (Día)", format="%.1f"),
+                        "Best Volumen (Histórico)": st.column_config.NumberColumn("Best Volumen (Histórico)", format="%.1f"),
                     }
                 )
 
