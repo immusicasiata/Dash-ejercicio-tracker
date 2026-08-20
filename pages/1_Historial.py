@@ -1,9 +1,51 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from utils import load_data, get_cached_date_summary
 
 st.set_page_config(page_title="Historial por Fecha", layout="wide")
 st.title("📊 Seguimiento de Sesión")
+
+def calcular_estado_tendencia(ex_hist):
+    """
+    Normaliza a KG antes de calcular la pendiente (regresión lineal) 
+    de las últimas 4 sesiones para evaluar si está Subiendo, en Descarga o en Meseta.
+    """
+    if len(ex_hist) < 4:
+        return "🌱 Nuevo / Pocos datos"
+    
+    # Tomar las últimas 4 sesiones con datos válidos de peso
+    ultimas_4 = ex_hist.dropna(subset=['Weight']).tail(4)
+    if len(ultimas_4) < 4:
+        return "🌱 Pocos datos"
+    
+    pesos_kg = []
+    for _, row in ultimas_4.iterrows():
+        peso = row['Weight']
+        # Identificar la unidad si existe en el registro (por defecto busca 'Weight Unit')
+        unidad = str(row.get('Weight Unit', 'lb')).lower()
+        
+        # Conversión inteligente a KG si está en libras
+        if 'lb' in unidad:
+            pesos_kg.append(peso * 0.453592)
+        else:
+            pesos_kg.append(peso)
+    
+    pesos_kg = np.array(pesos_kg)
+    x = np.arange(len(pesos_kg))
+    
+    # Calcular pendiente (m) de la línea de regresión: y = mx + b
+    pendiente_kg, _ = np.polyfit(x, pesos_kg, 1)
+    
+    # Umbral de 0.45 kg (~1 lb por sesión)
+    UMBRAL_KG = 0.45 
+    
+    if pendiente_kg > UMBRAL_KG:
+        return "🚀 Subiendo"
+    elif pendiente_kg < -UMBRAL_KG:
+        return "🔋 Descarga"
+    else:
+        return "⚠️ Meseta"
 
 df = load_data()
 
@@ -44,6 +86,7 @@ if not df.empty and 'Date' in df.columns:
                         peso = last_row['Weight']
                         reps = last_row['Reps']
                         
+                        # Fórmulas de estimación de Fuerza (Brzycki)
                         if reps > 0:
                             rm1 = peso / (1.0278 - (0.0278 * reps))
                         else:
@@ -52,20 +95,17 @@ if not df.empty and 'Date' in df.columns:
                         rm5 = rm1 * 0.87
                         rm10 = rm1 * 0.75
                         
-                        es_meseta = False
-                        if len(ex_hist) >= 4:
-                            ultimos_pesos = ex_hist['Weight'].tail(4).values
-                            if len(set(ultimos_pesos)) == 1 and ultimos_pesos[0] > 0:
-                                es_meseta = True
+                        # Evaluar tendencia matemática considerando la unidad
+                        estado_tendencia = calcular_estado_tendencia(ex_hist)
                         
                         datos_fuerza.append({
                             "Ejercicio": ex,
-                            "Peso (kg)": peso,
+                            "Peso": peso,
                             "Reps": int(reps),
                             "1RM": round(rm1, 1),
                             "5RM": round(rm5, 1),
                             "10RM": round(rm10, 1),
-                            "Estado": "⚠️ Meseta" if es_meseta else "✅ Activo"
+                            "Estado": estado_tendencia
                         })
                 
                 if datos_fuerza:
@@ -75,10 +115,10 @@ if not df.empty and 'Date' in df.columns:
                         df_f.set_index("Ejercicio"),
                         use_container_width=True,
                         column_config={
-                            "Peso (kg)": st.column_config.NumberColumn("Peso (kg)", format="%.1f"),
-                            "1RM": st.column_config.NumberColumn("1RM (kg)", format="%.1f"),
-                            "5RM": st.column_config.NumberColumn("5RM (kg)", format="%.1f"),
-                            "10RM": st.column_config.NumberColumn("10RM (kg)", format="%.1f"),
+                            "Peso": st.column_config.NumberColumn("Peso", format="%.1f"),
+                            "1RM": st.column_config.NumberColumn("1RM", format="%.1f"),
+                            "5RM": st.column_config.NumberColumn("5RM", format="%.1f"),
+                            "10RM": st.column_config.NumberColumn("10RM", format="%.1f"),
                         }
                     )
 
@@ -86,21 +126,15 @@ if not df.empty and 'Date' in df.columns:
                 datos_cardio = []
                 for ex in cat_df['Exercise'].dropna().unique():
                     ex_current = cat_df[cat_df['Exercise'] == ex]
-                    # Identificar si tiene registros de distancia o tiempo
                     cardio_rows = ex_current[ex_current['Distance'].notna() | ex_current['Time'].notna()]
                     
                     for _, row in cardio_rows.iterrows():
-                        dist = row.get('Time') # O distancia según aplique
                         distancia = row.get('Distance', 0)
                         tiempo_str = str(row.get('Time', ''))
                         
-                        # Intentar calcular velocidad o ritmo básico si hay datos válidos
-                        # Asumimos que Time viene en formato texto o minutos y Distance en km
                         velocidad_txt = "-"
                         try:
-                            # Si la distancia y el tiempo son convertibles a números (ej. tiempo en minutos)
                             d_val = float(distancia) if pd.notna(distancia) else 0.0
-                            # Si guardas el tiempo como minutos totales o string, adaptamos una métrica visual limpia:
                             if d_val > 0 and tiempo_str:
                                 velocidad_txt = f"{d_val} km en {tiempo_str}"
                         except:
