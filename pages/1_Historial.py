@@ -1,52 +1,55 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from utils import load_data
 
-st.set_page_config(page_title="Historial", layout="wide")
-
-st.title("📊 Análisis de Entrenamiento")
+st.set_page_config(page_title="Historial Avanzado", layout="wide")
+st.title("📊 Análisis de Entrenamiento Avanzado")
 
 df = load_data()
-
 if not df.empty:
-    # 1. Filtro inicial por Grupo Muscular (Categoría)
-    st.subheader("Filtro de Análisis")
     categorias = sorted(df['Category'].dropna().unique())
-    selected_cat = st.selectbox("Selecciona el grupo muscular a evaluar:", categorias)
-    
-    # Filtrar datos por la categoría seleccionada
+    selected_cat = st.selectbox("Filtro: Selecciona grupo muscular", categorias)
     df_cat = df[df['Category'] == selected_cat].copy()
     df_cat['Tonelaje'] = df_cat['Weight'] * df_cat['Reps']
     
-    st.divider()
-    
-    tab1, tab2, tab3 = st.tabs(["⚖️ Volumen y Tonelaje", "📈 Progresión por Ejercicio", "🏆 Salón de la Fama"])
+    tab1, tab2, tab3 = st.tabs(["⚖️ Volumen y Fatiga", "⚠️ Alertas de Meseta", "📈 Seguimiento y RM"])
 
     with tab1:
-        st.subheader(f"Carga de Trabajo: {selected_cat}")
-        df_cat['Semana'] = df_cat['Date'].dt.to_period('W').dt.start_time
-        volumen_semanal = df_cat.groupby(['Semana', 'Exercise'])['Tonelaje'].sum().unstack().fillna(0)
-        st.bar_chart(volumen_semanal)
+        st.subheader("Volumen Sostenido vs Fatiga")
+        # Media móvil de 3 sesiones para ver la tendencia real sin el ruido del día a día
+        df_cat['Vol_Movil'] = df_cat.groupby('Exercise')['Tonelaje'].transform(lambda x: x.rolling(3, min_periods=1).mean())
+        st.area_chart(df_cat.pivot_table(index='Date', columns='Exercise', values='Vol_Movil', aggfunc='sum'))
+        st.caption("Gráfico: Volumen acumulado por sesión con suavizado de 3 sesiones. Si el área es plana o cae tras picos altos, hay fatiga excesiva.")
 
     with tab2:
-        st.subheader("Tendencia de Fuerza (1RM Estimado)")
-        # Solo ejercicios que pertenecen a esta categoría
-        ejercicios_cat = sorted(df_cat['Exercise'].dropna().unique())
-        selected_ex = st.selectbox("Selecciona ejercicio del grupo:", ejercicios_cat)
+        st.subheader("Detección de Estancamientos (Mesetas)")
+        # Lógica: Si el peso no sube en 4 sesiones seguidas, es una meseta
+        for ex in df_cat['Exercise'].unique():
+            ex_data = df_cat[df_cat['Exercise'] == ex].sort_values('Date')
+            if len(ex_data) >= 4:
+                ultimos_pesos = ex_data['Weight'].tail(4).values
+                if len(set(ultimos_pesos)) == 1: # Mismo peso 4 veces seguidas
+                    st.warning(f"⚠️ Meseta detectada en **{ex}**: Peso estancado en {ultimos_pesos[-1]}kg")
         
-        ex_data = df_cat[df_cat['Exercise'] == selected_ex].dropna(subset=['Weight', 'Reps']).sort_values('Date')
-        
-        if not ex_data.empty:
-            # Fórmula de Brzycki
-            ex_data['1RM_Est'] = ex_data['Weight'] / (1.0278 - 0.0278 * ex_data['Reps'])
-            st.line_chart(ex_data.set_index('Date')['1RM_Est'])
-        else:
-            st.info("No hay suficientes datos de fuerza para este ejercicio.")
-
     with tab3:
-        st.subheader(f"Mejores Marcas en {selected_cat}")
-        pr_df = df_cat.groupby('Exercise')[['Weight', 'Reps']].max().reset_index()
-        st.dataframe(pr_df, use_container_width=True)
+        st.subheader("Estimaciones de Fuerza (RM)")
+        ejercicios_cat = sorted(df_cat['Exercise'].dropna().unique())
+        selected_ex = st.selectbox("Ejercicio:", ejercicios_cat)
+        
+        data_ex = df_cat[df_cat['Exercise'] == selected_ex].dropna(subset=['Weight', 'Reps'])
+        
+        # Fórmulas de estimación
+        # 1RM (Epley), 10RM (estimado inverso aprox)
+        data_ex['1RM'] = data_ex['Weight'] * (1 + data_ex['Reps'] / 30)
+        data_ex['10RM'] = data_ex['1RM'] * 0.75 
+        
+        st.line_chart(data_ex.set_index('Date')[['1RM', '10RM']])
+        
+        st.write("### Resumen actual")
+        last_session = data_ex.iloc[-1]
+        st.metric("1RM Estimado Actual", f"{last_session['1RM']:.1f} kg")
+        st.metric("10RM Estimado", f"{last_session['10RM']:.1f} kg")
 
 else:
-    st.info("No hay datos cargados para analizar.")
+    st.info("No hay datos suficientes.")
