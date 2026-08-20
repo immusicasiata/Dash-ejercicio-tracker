@@ -10,11 +10,24 @@ def load_data():
     try:
         df = conn.read()
         df['Date'] = pd.to_datetime(df['Date'])
+        
+        # Forzar conversión numérica para evitar el TypeError al editar
+        numeric_cols = ['Weight', 'Reps', 'Distance']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
         return df.dropna(how='all')
     except: 
         return pd.DataFrame()
 
 def save_data(df):
+    # Aseguramos tipos numéricos antes de guardar
+    numeric_cols = ['Weight', 'Reps', 'Distance']
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
     conn.update(data=df)
     st.cache_data.clear()
 
@@ -38,7 +51,7 @@ daily_df = df[df['Date'].dt.date == selected_date.date()].copy()
 if not daily_df.empty:
     st.subheader(f"Registros del {selected_date.strftime('%d/%m/%Y')}")
     
-    # Agrupamos por categoría (Grupo Muscular)
+    # Agrupamos por categoría
     for category in daily_df['Category'].unique():
         with st.expander(f"💪 {category}", expanded=True):
             cat_df = daily_df[daily_df['Category'] == category]
@@ -46,7 +59,7 @@ if not daily_df.empty:
             for exercise in cat_df['Exercise'].unique():
                 ex_df = cat_df[cat_df['Exercise'] == exercise]
                 
-                # 1. Obtener la unidad con lógica robusta
+                # Obtener la unidad
                 most_freq_unit = ""
                 for unit_col in ['Weight Unit', 'Distance Unit']:
                     if unit_col in ex_df.columns:
@@ -55,22 +68,13 @@ if not daily_df.empty:
                             most_freq_unit = units.mode().iloc[0]
                             break
                 
-                if not most_freq_unit and 'Exercise' in df.columns:
-                    hist_ex = df[df['Exercise'] == exercise]
-                    for unit_col in ['Weight Unit', 'Distance Unit']:
-                        if unit_col in hist_ex.columns:
-                            units = hist_ex[unit_col].dropna()
-                            if not units.empty:
-                                most_freq_unit = units.mode().iloc[0]
-                                break
-
-                # 2. Definir Título
+                # Definir Título
                 if most_freq_unit and str(most_freq_unit).strip() != "":
                     st.markdown(f"**{exercise} ({most_freq_unit})**")
                 else:
                     st.markdown(f"**{exercise}**")
                 
-                # 3. Interfaz táctil optimizada por cada serie existente
+                # Interfaz de edición
                 for idx, row in ex_df.iterrows():
                     is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
                     
@@ -88,7 +92,6 @@ if not daily_df.empty:
                                 df.loc[idx, 'Distance'] = new_dist if new_dist > 0 else None
                                 df.loc[idx, 'Time'] = new_time if new_time else None
                                 save_data(df)
-                                st.success("¡Guardado!")
                                 st.rerun()
                     else:
                         col1, col2, col_btn = st.columns([2, 2, 1])
@@ -104,101 +107,57 @@ if not daily_df.empty:
                                 df.loc[idx, 'Weight'] = new_w if new_w > 0 else None
                                 df.loc[idx, 'Reps'] = new_r if new_r > 0 else None
                                 save_data(df)
-                                st.success("¡Guardado!")
                                 st.rerun()
                 
-                # 4. Botón para AGREGAR UNA NUEVA SERIE a este ejercicio
+                # Botón para Agregar serie
                 if st.button(f"➕ Agregar serie a {exercise}", key=f"add_row_{exercise}_{selected_date}"):
                     is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
-                    
                     new_row = {
-                        'Date': selected_date,
-                        'Exercise': exercise,
-                        'Category': category,
-                        'Weight': None,
-                        'Weight Unit': most_freq_unit if not is_cardio_ex else None,
-                        'Reps': None,
-                        'Distance': None,
-                        'Distance Unit': most_freq_unit if is_cardio_ex else None,
-                        'Time': None,
-                        'Comment': None
+                        'Date': selected_date, 'Exercise': exercise, 'Category': category,
+                        'Weight': None, 'Weight Unit': most_freq_unit if not is_cardio_ex else None,
+                        'Reps': None, 'Distance': None, 'Distance Unit': most_freq_unit if is_cardio_ex else None,
+                        'Time': None, 'Comment': None
                     }
-                    
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     save_data(df)
-                    st.success("¡Nueva serie añadida!")
                     st.rerun()
-                
                 st.divider()
 else:
     st.info("No hay registros en esta fecha.")
 
-# --- NUEVA SECCIÓN: AGREGAR NUEVO EJERCICIO ---
+# --- SECCIÓN: AGREGAR NUEVO EJERCICIO ---
 st.divider()
 with st.expander("➕ Agregar nuevo ejercicio al día"):
-    # Extraer solo las categorías existentes en el DataFrame
     existing_categories = sorted(df['Category'].dropna().unique().tolist()) if 'Category' in df.columns else []
     
     if existing_categories:
         selected_category = st.selectbox("Grupo Muscular (Categoría):", existing_categories, key=f"new_ex_cat_{selected_date}")
-        
-        # Filtrar ejercicios históricos de esa categoría para sugerirlos
         cat_history = df[df['Category'] == selected_category]['Exercise'].dropna().unique().tolist()
-        
         options_exercise = sorted(list(set(cat_history))) + ["➕ Otro (Escribir nuevo)"]
         chosen_exercise_option = st.selectbox("Ejercicio:", options_exercise, key=f"new_ex_name_{selected_date}")
         
-        if chosen_exercise_option == "➕ Otro (Escribir nuevo)":
-            new_exercise_name = st.text_input("Nombre del nuevo ejercicio:", key=f"custom_ex_{selected_date}")
-        else:
-            new_exercise_name = chosen_exercise_option
-            
+        new_exercise_name = st.text_input("Nombre del ejercicio:", key=f"custom_ex_{selected_date}") if chosen_exercise_option == "➕ Otro (Escribir nuevo)" else chosen_exercise_option
+        
         unit_choice = st.selectbox("Unidad de medida:", ["kg", "lbs", "Sin unidad"], key=f"new_unit_{selected_date}")
         final_unit = unit_choice if unit_choice != "Sin unidad" else None
 
         if st.button("Guardar e iniciar ejercicio", key=f"btn_save_new_exercise_{selected_date}"):
             if new_exercise_name.strip():
-                new_exercise_row = {
-                    'Date': selected_date,
-                    'Exercise': new_exercise_name.strip(),
-                    'Category': selected_category,
-                    'Weight': None,
-                    'Weight Unit': final_unit,
-                    'Reps': None,
-                    'Distance': None,
-                    'Distance Unit': None,
-                    'Time': None,
-                    'Comment': None
-                }
-                
-                df = pd.concat([df, pd.DataFrame([new_exercise_row])], ignore_index=True)
+                new_row = {'Date': selected_date, 'Exercise': new_exercise_name.strip(), 'Category': selected_category, 'Weight Unit': final_unit}
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                 save_data(df)
-                st.success(f"¡Ejercicio '{new_exercise_name}' agregado correctamente!")
                 st.rerun()
-            else:
-                st.warning("Por favor, ingresa un nombre de ejercicio válido.")
     else:
-        st.warning("No hay categorías existentes. Primero debes registrar algún dato en tu hoja de cálculo.")
+        st.warning("No hay categorías existentes.")
 
-# --- FUNCIONALIDAD DE COPIAR RUTINA ---
+# --- COPIAR RUTINA ---
 st.divider()
 with st.expander("🔄 Copiar rutina de otro día"):
     source_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
     source_df = df[df['Date'].dt.date == pd.to_datetime(source_date).date()]
-    
     if not source_df.empty:
-        st.write("Vista previa de la rutina a copiar:")
-        st.dataframe(
-            source_df[['Exercise', 'Category', 'Weight', 'Reps', 'Distance', 'Time']], 
-            use_container_width=True,
-            hide_index=True
-        )
-        
         if st.button("Copiar esta rutina al día seleccionado"):
             new_entries = source_df.copy()
             new_entries['Date'] = selected_date
             save_data(pd.concat([df, new_entries], ignore_index=True))
-            st.success("¡Rutina copiada exitosamente!")
             st.rerun()
-    else:
-        st.warning("No hay datos registrados en esa fecha para copiar.")
