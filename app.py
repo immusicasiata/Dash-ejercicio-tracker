@@ -2,7 +2,13 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(
+    page_title="Berry-train", 
+    page_icon="🏋️‍♂️", 
+    layout="wide"
+)
+
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
@@ -59,7 +65,6 @@ if not daily_df.empty:
                 
                 if not hist_ex.empty:
                     max_weight_hist = hist_ex['Weight'].max()
-                    # Agrupar por peso y encontrar el máximo de reps histórico para cada uno
                     grouped_hist = hist_ex.groupby('Weight')['Reps'].max()
                     max_reps_per_weight = grouped_hist.to_dict()
                 
@@ -96,7 +101,6 @@ if not daily_df.empty:
                                 save_data(df)
                                 st.rerun()
                     else:
-                        # Distribución visual para dar espacio a los badges de récords
                         col_w, col_r, col_badges, col_btn = st.columns([1.8, 1.8, 1.4, 0.9])
                         curr_w = format_clean(row['Weight'])
                         curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
@@ -107,9 +111,7 @@ if not daily_df.empty:
                             new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
                         
                         with col_badges:
-                            # Lógica para mostrar indicadores dinámicos basados en el input actual o guardado
                             badges_html = ""
-                            # Comprobamos con el valor actual de la fila en el DF o el que se esté visualizando
                             check_w = curr_w if curr_w > 0 else 0
                             check_r = curr_r if curr_r > 0 else 0
                             
@@ -118,7 +120,6 @@ if not daily_df.empty:
                             
                             if check_w > 0 and check_r > 0:
                                 historical_max_reps_for_w = max_reps_per_weight.get(check_w, 0)
-                                # Si las repeticiones actuales igualan o superan el récord histórico para ese peso específico (excluyendo el registro actual si ya estaba sumado, o de forma general)
                                 if check_r >= historical_max_reps_for_w and historical_max_reps_for_w > 0:
                                     badges_html += "🏆 <span style='color:#FFD700; font-weight:bold;'>Récord Reps</span>"
                             
