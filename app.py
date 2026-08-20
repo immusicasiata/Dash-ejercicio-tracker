@@ -85,6 +85,7 @@ if not daily_df.empty:
                 edited_ex = st.data_editor(
                     to_edit, 
                     use_container_width=True, 
+                    num_rows="dynamic",
                     hide_index=True,
                     key=f"editor_{exercise}_{selected_date}"
                 )
