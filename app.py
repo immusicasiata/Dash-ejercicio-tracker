@@ -3,29 +3,6 @@ import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
-
-# --- ESTILOS CSS PARA CELULARES (Aumentar tamaño en tablas y editores) ---
-st.markdown("""
-<style>
-    /* Agrandar el texto de los datos dentro de las celdas del editor */
-    div[data-baseweb="input"] input {
-        font-size: 22px !important;
-        font-weight: bold !important;
-    }
-    
-    /* Agrandar el texto de las celdas de la tabla/editor antes de hacer clic */
-    [data-testid="stDataEditor"] div, [data-testid="stDataFrame"] div {
-        font-size: 20px !important;
-    }
-    
-    /* Agrandar los encabezados de las columnas (Peso, Repeticiones, etc.) */
-    [data-testid="stDataEditor"] th div, [data-testid="stDataFrame"] th div {
-        font-size: 18px !important;
-        font-weight: bold !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
@@ -93,33 +70,45 @@ if not daily_df.empty:
                 else:
                     st.markdown(f"**{exercise}**")
                 
-                # 3. Selección estricta de columnas
-                if ex_df['Distance'].notna().any() or ex_df['Time'].notna().any():
-                    cols = ['Distance', 'Time']
-                    display_names = {'Distance': 'Distancia', 'Time': 'Duración'}
-                else:
-                    cols = ['Weight', 'Reps']
-                    display_names = {'Weight': 'Peso', 'Reps': 'Repeticiones'}
+                # 3. Interfaz táctil optimizada para celular por cada serie
+                for idx, row in ex_df.iterrows():
+                    # Determinamos si es fuerza (Peso/Reps) o cardio (Distancia/Tiempo)
+                    is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
+                    
+                    if is_cardio:
+                        col1, col2, col_btn = st.columns([2, 2, 1])
+                        curr_dist = format_clean(row['Distance']) if pd.notna(row['Distance']) else 0.0
+                        curr_time = str(row['Time']) if pd.notna(row['Time']) else ""
+                        
+                        with col1:
+                            new_dist = st.number_input("Distancia", value=float(curr_dist), step=0.1, key=f"dist_{idx}_{selected_date}", label_visibility="collapsed")
+                        with col2:
+                            new_time = st.text_input("Duración", value=curr_time, key=f"time_{idx}_{selected_date}", label_visibility="collapsed")
+                        with col_btn:
+                            if st.button("💾", key=f"save_c_{idx}_{selected_date}"):
+                                df.loc[idx, 'Distance'] = new_dist if new_dist > 0 else None
+                                df.loc[idx, 'Time'] = new_time if new_time else None
+                                save_data(df)
+                                st.success("¡Guardado!")
+                                st.rerun()
+                    else:
+                        col1, col2, col_btn = st.columns([2, 2, 1])
+                        curr_w = format_clean(row['Weight']) if pd.notna(row['Weight']) else 0.0
+                        curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
+                        
+                        with col1:
+                            new_w = st.number_input("Peso", value=float(curr_w), step=1.0, key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
+                        with col2:
+                            new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
+                        with col_btn:
+                            if st.button("💾", key=f"save_w_{idx}_{selected_date}"):
+                                df.loc[idx, 'Weight'] = new_w if new_w > 0 else None
+                                df.loc[idx, 'Reps'] = new_r if new_r > 0 else None
+                                save_data(df)
+                                st.success("¡Guardado!")
+                                st.rerun()
                 
-                to_edit = ex_df[cols].rename(columns=display_names)
-                to_edit = to_edit.map(format_clean)
-                
-                # 4. Editor interactivo con hide_index=True
-                edited_ex = st.data_editor(
-                    to_edit, 
-                    use_container_width=True, 
-                    hide_index=True,
-                    num_rows="dynamic",
-                    key=f"editor_{exercise}_{selected_date}"
-                )
-                
-                # 5. Botón de guardado
-                if st.button(f"Guardar {exercise}", key=f"btn_{exercise}"):
-                    updated_ex = edited_ex.rename(columns={v: k for k, v in display_names.items()})
-                    df.loc[ex_df.index, cols] = updated_ex
-                    save_data(df)
-                    st.success(f"¡{exercise} actualizado!")
-                    st.rerun()
+                st.divider()
 else:
     st.info("No hay registros en esta fecha.")
 
