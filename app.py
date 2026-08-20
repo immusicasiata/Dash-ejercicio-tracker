@@ -32,19 +32,20 @@ def format_clean(val):
     except: 
         return 0.0
 
-# --- FUNCIÓN AUXILIAR PARA ICONOS DINÁMICOS ---
-def get_category_icon(category_name):
-    cat_lower = str(category_name).lower().strip()
+# --- FUNCIÓN AUXILIAR PARA UN ICONO POR FECHA ---
+def get_date_icon(categories):
+    # Unimos todas las categorías del día en un solo texto en minúsculas para evaluar
+    all_cats_str = " ".join([str(cat).lower() for cat in categories])
     
-    # Tren Inferior (Piernas)
-    if any(k in cat_lower for k in ['leg', 'pierna', 'cuadriceps', 'femorales', 'gluteo', 'pantorrilla', 'squat', 'lower']):
+    # Si hay alguna categoría de tren inferior
+    if any(k in all_cats_str for k in ['leg', 'pierna', 'cuadriceps', 'femorales', 'gluteo', 'pantorrilla', 'squat', 'lower']):
         return "🦵 "
     
-    # Tren Superior (Pecho, Espalda, Brazos, Hombros, etc.)
-    elif any(k in cat_lower for k in ['chest', 'pecho', 'pectoral', 'back', 'espalda', 'dorsal', 'remo', 'pull', 'biceps', 'triceps', 'hombro', 'shoulder', 'upper', 'brazo', 'arm']):
+    # Si hay alguna categoría de tren superior
+    elif any(k in all_cats_str for k in ['chest', 'pecho', 'pectoral', 'back', 'espalda', 'dorsal', 'remo', 'pull', 'biceps', 'triceps', 'hombro', 'shoulder', 'upper', 'brazo', 'arm']):
         return "🦾 "
     
-    # Sin icono para los demás casos
+    # Por defecto sin icono
     return ""
 
 st.title("📅 Panel de Entrenamiento")
@@ -185,13 +186,16 @@ with st.expander("🔄 Copiar rutina de otro día"):
         
         date_summary = []
         for d in sorted(valid_df['Date_Only'].unique(), reverse=True):
-            # Usar set para asegurar categorías únicas por fecha
             cats = valid_df[valid_df['Date_Only'] == d]['Category'].dropna().unique()
             
-            formatted_cats = [f"{get_category_icon(cat)}{cat}" for cat in cats]
-            cats_str = ", ".join(formatted_cats) if len(formatted_cats) > 0 else "Sin categoría"
+            # Obtener UN SOLO icono evaluando el conjunto de categorías del día
+            date_icon = get_date_icon(cats)
             
-            date_summary.append((d, f"{d.strftime('%d/%m/%Y')} — {cats_str}"))
+            # Mostrar las categorías limpias sin icono individual
+            cats_str = ", ".join(cats) if len(cats) > 0 else "Sin categoría"
+            
+            # Formato final con un único icono al principio de la línea
+            date_summary.append((d, f"{date_icon}{d.strftime('%d/%m/%Y')} — {cats_str}"))
             
         if date_summary:
             dates_only = [item[0] for item in date_summary]
