@@ -10,7 +10,6 @@ def load_data():
     try:
         df = conn.read()
         df['Date'] = pd.to_datetime(df['Date'])
-        # Forzar tipos numéricos para evitar el TypeError
         numeric_cols = ['Weight', 'Reps', 'Distance']
         for col in numeric_cols:
             if col in df.columns:
@@ -33,6 +32,21 @@ def format_clean(val):
     except: 
         return 0.0
 
+# --- FUNCIÓN AUXILIAR PARA ICONOS DINÁMICOS ---
+def get_category_icon(category_name):
+    cat_lower = str(category_name).lower().strip()
+    
+    # Tren Inferior (Piernas)
+    if any(k in cat_lower for k in ['leg', 'pierna', 'cuadriceps', 'femorales', 'gluteo', 'pantorrilla', 'squat', 'lower']):
+        return "🦵 "
+    
+    # Tren Superior (Pecho, Espalda, Brazos, Hombros, etc.)
+    elif any(k in cat_lower for k in ['chest', 'pecho', 'pectoral', 'back', 'espalda', 'dorsal', 'remo', 'pull', 'biceps', 'triceps', 'hombro', 'shoulder', 'upper', 'brazo', 'arm']):
+        return "🦾 "
+    
+    # Sin icono para los demás casos
+    return ""
+
 st.title("📅 Panel de Entrenamiento")
 df = load_data()
 
@@ -44,7 +58,6 @@ daily_df = df[df['Date'].dt.date == selected_date.date()].copy()
 if not daily_df.empty:
     st.subheader(f"Registros del {selected_date.strftime('%d/%m/%Y')}")
     
-    # Agrupamos por categoría
     for category in daily_df['Category'].unique():
         with st.expander(f"💪 {category}", expanded=True):
             cat_df = daily_df[daily_df['Category'] == category]
@@ -52,18 +65,15 @@ if not daily_df.empty:
             for exercise in cat_df['Exercise'].unique():
                 ex_df = cat_df[cat_df['Exercise'] == exercise]
                 
-                # --- CÁLCULO DE RÉCORDS Y MÁXIMOS HISTÓRICOS ---
                 hist_ex = df[df['Exercise'] == exercise].dropna(subset=['Weight', 'Reps'])
                 max_weight_hist = 0.0
                 max_reps_per_weight = {}
                 
                 if not hist_ex.empty:
                     max_weight_hist = hist_ex['Weight'].max()
-                    # Agrupar por peso y encontrar el máximo de reps histórico para cada uno
                     grouped_hist = hist_ex.groupby('Weight')['Reps'].max()
                     max_reps_per_weight = grouped_hist.to_dict()
                 
-                # Obtener la unidad
                 most_freq_unit = ""
                 for unit_col in ['Weight Unit', 'Distance Unit']:
                     if unit_col in ex_df.columns:
@@ -96,7 +106,6 @@ if not daily_df.empty:
                                 save_data(df)
                                 st.rerun()
                     else:
-                        # Distribución visual para dar espacio a los badges de récords
                         col_w, col_r, col_badges, col_btn = st.columns([1.8, 1.8, 1.4, 0.9])
                         curr_w = format_clean(row['Weight'])
                         curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
@@ -107,7 +116,6 @@ if not daily_df.empty:
                             new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
                         
                         with col_badges:
-                            # Lógica para mostrar indicadores dinámicos basados en el input actual o guardado
                             badges_html = ""
                             check_w = curr_w if curr_w > 0 else 0
                             check_r = curr_r if curr_r > 0 else 0
@@ -168,20 +176,24 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
 
 st.divider()
 with st.expander("🔄 Copiar rutina de otro día"):
-    # Obtener fechas únicas que tengan registros ordenadas de más reciente a más antigua
+    s_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
+    s_date = pd.to_datetime(s_date)
+    
     if not df.empty and 'Date' in df.columns:
         valid_df = df.dropna(subset=['Date']).copy()
         valid_df['Date_Only'] = valid_df['Date'].dt.date
         
-        # Crear un diccionario o lista de fechas con sus categorías correspondientes
         date_summary = []
         for d in sorted(valid_df['Date_Only'].unique(), reverse=True):
+            # Usar set para asegurar categorías únicas por fecha
             cats = valid_df[valid_df['Date_Only'] == d]['Category'].dropna().unique()
-            cats_str = ", ".join(cats) if len(cats) > 0 else "Sin categoría"
-            date_summary.append((d, f"{d.strftime('%d/%m/%Y')} — 🦾 [{cats_str}]"))
+            
+            formatted_cats = [f"{get_category_icon(cat)}{cat}" for cat in cats]
+            cats_str = ", ".join(formatted_cats) if len(formatted_cats) > 0 else "Sin categoría"
+            
+            date_summary.append((d, f"{d.strftime('%d/%m/%Y')} — {cats_str}"))
             
         if date_summary:
-            # Extraer solo las tuplas de fechas y las etiquetas formateadas
             dates_only = [item[0] for item in date_summary]
             date_labels = [item[1] for item in date_summary]
             
@@ -191,17 +203,16 @@ with st.expander("🔄 Copiar rutina de otro día"):
                 format_func=lambda x: date_labels[x],
                 key="copy_date_select"
             )
-            s_date = pd.to_datetime(dates_only[selected_label_idx])
+            target_date = pd.to_datetime(dates_only[selected_label_idx])
             
-            # Filtrar y previsualizar los ejercicios del día seleccionado
-            source_entries = df[df['Date'].dt.date == s_date.date()].copy()
+            source_entries = df[df['Date'].dt.date == target_date.date()].copy()
             
             if not source_entries.empty:
-                st.write(f"Vista previa de la rutina:")
+                st.write(f"Vista previa de la rutina del {target_date.strftime('%d/%m/%Y')}:")
                 preview_df = source_entries[['Category', 'Exercise', 'Weight', 'Reps', 'Distance']].drop_duplicates()
                 st.dataframe(preview_df, use_container_width=True, hide_index=True)
                 
-                if st.button("Copiar rutina seleccionada", key="btn_confirm_copy"):
+                if st.button("Copiar rutina seleccionada"):
                     new_entries = source_entries.copy()
                     new_entries['Date'] = selected_date
                     save_data(pd.concat([df, new_entries], ignore_index=True))
