@@ -168,22 +168,48 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
 
 st.divider()
 with st.expander("🔄 Copiar rutina de otro día"):
-    s_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
-    s_date = pd.to_datetime(s_date)
-    
-    # Filtrar y previsualizar los ejercicios del día seleccionado antes de copiar
-    source_entries = df[df['Date'].dt.date == s_date.date()].copy()
-    
-    if not source_entries.empty:
-        st.write(f"Ejercicios encontrados el {s_date.strftime('%d/%m/%Y')}:")
-        preview_df = source_entries[['Category', 'Exercise', 'Weight', 'Reps', 'Distance']].drop_duplicates()
-        st.dataframe(preview_df, use_container_width=True)
+    # Obtener fechas únicas que tengan registros ordenadas de más reciente a más antigua
+    if not df.empty and 'Date' in df.columns:
+        valid_df = df.dropna(subset=['Date']).copy()
+        valid_df['Date_Only'] = valid_df['Date'].dt.date
         
-        if st.button("Copiar rutina"):
-            new_entries = source_entries.copy()
-            new_entries['Date'] = selected_date
-            save_data(pd.concat([df, new_entries], ignore_index=True))
-            st.success("¡Rutina copiada con éxito!")
-            st.rerun()
+        # Crear un diccionario o lista de fechas con sus categorías correspondientes
+        date_summary = []
+        for d in sorted(valid_df['Date_Only'].unique(), reverse=True):
+            cats = valid_df[valid_df['Date_Only'] == d]['Category'].dropna().unique()
+            cats_str = ", ".join(cats) if len(cats) > 0 else "Sin categoría"
+            date_summary.append((d, f"{d.strftime('%d/%m/%Y')} — 🦾 [{cats_str}]"))
+            
+        if date_summary:
+            # Extraer solo las tuplas de fechas y las etiquetas formateadas
+            dates_only = [item[0] for item in date_summary]
+            date_labels = [item[1] for item in date_summary]
+            
+            selected_label_idx = st.selectbox(
+                "Selecciona la fecha a copiar:", 
+                range(len(dates_only)), 
+                format_func=lambda x: date_labels[x],
+                key="copy_date_select"
+            )
+            s_date = pd.to_datetime(dates_only[selected_label_idx])
+            
+            # Filtrar y previsualizar los ejercicios del día seleccionado
+            source_entries = df[df['Date'].dt.date == s_date.date()].copy()
+            
+            if not source_entries.empty:
+                st.write(f"Vista previa de la rutina:")
+                preview_df = source_entries[['Category', 'Exercise', 'Weight', 'Reps', 'Distance']].drop_duplicates()
+                st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                
+                if st.button("Copiar rutina seleccionada", key="btn_confirm_copy"):
+                    new_entries = source_entries.copy()
+                    new_entries['Date'] = selected_date
+                    save_data(pd.concat([df, new_entries], ignore_index=True))
+                    st.success("¡Rutina copiada con éxito!")
+                    st.rerun()
+            else:
+                st.warning("No hay registros en la fecha seleccionada.")
+        else:
+            st.info("No hay historial disponible para copiar.")
     else:
-        st.warning("No hay registros en la fecha seleccionada.")
+        st.warning("No hay datos en el sistema.")
