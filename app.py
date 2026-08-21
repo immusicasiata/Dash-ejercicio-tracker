@@ -10,6 +10,22 @@ def format_clean(val):
     except: 
         return 0.0
 
+# Función de autoguardado ejecutada silenciosamente al modificar cualquier input
+def update_cell(idx, col, key_name):
+    new_val = st.session_state.get(key_name)
+    current_df = load_data()
+    
+    if col in ['Weight', 'Reps', 'Distance']:
+        try:
+            new_val = float(new_val) if new_val is not None and float(new_val) > 0 else None
+        except (ValueError, TypeError):
+            new_val = None
+    elif col == 'Time':
+        new_val = str(new_val).strip() if new_val and str(new_val).strip() else None
+        
+    current_df.loc[idx, col] = new_val
+    save_data(current_df)
+
 st.title("📅 Panel de Entrenamiento")
 df = load_data()
 
@@ -28,7 +44,7 @@ if not daily_df.empty:
         ex_df = daily_df[daily_df['Exercise'] == exercise]
         category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
         
-        # Historial excluyendo el día actual para comparar de manera justa contra el pasado
+        # Historial de otras fechas para validar récords
         hist_ex = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())].dropna(subset=['Weight', 'Reps'])
         max_weight_hist = 0.0
         max_reps_per_weight = {}
@@ -53,34 +69,67 @@ if not daily_df.empty:
                 is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
                 
                 if is_cardio:
-                    col1, col2, col_btn_save, col_btn_del = st.columns([2, 2, 0.7, 0.7])
+                    col1, col2, col_btn_del = st.columns([2.5, 2.5, 0.7])
                     curr_dist = format_clean(row['Distance'])
                     curr_time = str(row['Time']) if pd.notna(row['Time']) else ""
                     
+                    key_dist = f"dist_{idx}_{selected_date}"
+                    key_time = f"time_{idx}_{selected_date}"
+                    
                     with col1:
-                        new_dist = st.number_input("Distancia", value=curr_dist, step=0.1, format="%.1f", key=f"dist_{idx}_{selected_date}", label_visibility="collapsed")
+                        st.number_input(
+                            "Distancia", 
+                            value=curr_dist, 
+                            step=0.1, 
+                            format="%.1f", 
+                            key=key_dist, 
+                            on_change=update_cell, 
+                            args=(idx, 'Distance', key_dist),
+                            label_visibility="collapsed"
+                        )
                     with col2:
-                        new_time = st.text_input("Duración", value=curr_time, key=f"time_{idx}_{selected_date}", label_visibility="collapsed")
-                    with col_btn_save:
-                        if st.button("💾", key=f"save_c_{idx}_{selected_date}"):
-                            df.loc[idx, 'Distance'] = new_dist if new_dist > 0 else None
-                            df.loc[idx, 'Time'] = new_time if new_time else None
-                            save_data(df)
-                            st.rerun()
+                        st.text_input(
+                            "Duración", 
+                            value=curr_time, 
+                            key=key_time, 
+                            on_change=update_cell, 
+                            args=(idx, 'Time', key_time),
+                            label_visibility="collapsed"
+                        )
                     with col_btn_del:
                         if st.button("🗑️", key=f"del_c_{idx}_{selected_date}", help="Borrar serie"):
                             df.drop(idx, inplace=True)
                             save_data(df)
                             st.rerun()
                 else:
-                    col_w, col_r, col_badges, col_btn_save, col_btn_del = st.columns([1.8, 1.8, 1.4, 0.7, 0.7])
+                    col_w, col_r, col_badges, col_btn_del = st.columns([2, 2, 2, 0.7])
                     curr_w = format_clean(row['Weight'])
                     curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                     
+                    key_w = f"w_{idx}_{selected_date}"
+                    key_r = f"r_{idx}_{selected_date}"
+                    
                     with col_w:
-                        new_w = st.number_input("Peso", value=curr_w, step=5.0, format="%.1f", key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
+                        st.number_input(
+                            "Peso", 
+                            value=curr_w, 
+                            step=5.0, 
+                            format="%.1f", 
+                            key=key_w, 
+                            on_change=update_cell, 
+                            args=(idx, 'Weight', key_w),
+                            label_visibility="collapsed"
+                        )
                     with col_r:
-                        new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
+                        st.number_input(
+                            "Reps", 
+                            value=curr_r, 
+                            step=1, 
+                            key=key_r, 
+                            on_change=update_cell, 
+                            args=(idx, 'Reps', key_r),
+                            label_visibility="collapsed"
+                        )
                     
                     with col_badges:
                         badges_html = ""
@@ -101,12 +150,6 @@ if not daily_df.empty:
                         if badges_html:
                             st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
 
-                    with col_btn_save:
-                        if st.button("💾", key=f"save_w_{idx}_{selected_date}"):
-                            df.loc[idx, 'Weight'] = new_w if new_w > 0 else None
-                            df.loc[idx, 'Reps'] = new_r if new_r > 0 else None
-                            save_data(df)
-                            st.rerun()
                     with col_btn_del:
                         if st.button("🗑️", key=f"del_w_{idx}_{selected_date}", help="Borrar serie"):
                             df.drop(idx, inplace=True)
