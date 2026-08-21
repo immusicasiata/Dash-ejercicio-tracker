@@ -21,93 +21,118 @@ daily_df = df[df['Date'].dt.date == selected_date.date()].copy()
 if not daily_df.empty:
     st.subheader(f"Registros del {selected_date.strftime('%d/%m/%Y')}")
     
-    for category in daily_df['Category'].unique():
-        with st.expander(f"💪 {category}", expanded=True):
-            cat_df = daily_df[daily_df['Category'] == category]
+    # Extraemos los ejercicios en el orden cronológico en el que aparecen en el dataframe
+    ordered_exercises = daily_df['Exercise'].unique()
+    
+    for exercise in ordered_exercises:
+        ex_df = daily_df[daily_df['Exercise'] == exercise]
+        
+        # Guardamos la categoría del ejercicio por si se necesita al agregar una nueva serie
+        category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
+        
+        hist_ex = df[df['Exercise'] == exercise].dropna(subset=['Weight', 'Reps'])
+        max_weight_hist = 0.0
+        max_reps_per_weight = {}
+        
+        if not hist_ex.empty:
+            max_weight_hist = hist_ex['Weight'].max()
+            grouped_hist = hist_ex.groupby('Weight')['Reps'].max()
+            max_reps_per_weight = grouped_hist.to_dict()
+        
+        most_freq_unit = ""
+        for unit_col in ['Weight Unit', 'Distance Unit']:
+            if unit_col in ex_df.columns:
+                units = ex_df[unit_col].dropna()
+                if not units.empty:
+                    most_freq_unit = units.mode().iloc[0]
+                    break
+        
+        # Título del ejercicio
+        st.markdown(f"### 🎯 {exercise} {f'({most_freq_unit})' if most_freq_unit else ''}")
+        
+        for idx, row in ex_df.iterrows():
+            is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
             
-            for exercise in cat_df['Exercise'].unique():
-                ex_df = cat_df[cat_df['Exercise'] == exercise]
+            if is_cardio:
+                # Se ajustan las columnas para hacer espacio al botón de borrar
+                col1, col2, col_btn_save, col_btn_del = st.columns([2, 2, 0.7, 0.7])
+                curr_dist = format_clean(row['Distance'])
+                curr_time = str(row['Time']) if pd.notna(row['Time']) else ""
                 
-                hist_ex = df[df['Exercise'] == exercise].dropna(subset=['Weight', 'Reps'])
-                max_weight_hist = 0.0
-                max_reps_per_weight = {}
+                with col1:
+                    new_dist = st.number_input("Distancia", value=curr_dist, step=0.1, format="%.1f", key=f"dist_{idx}_{selected_date}", label_visibility="collapsed")
+                with col2:
+                    new_time = st.text_input("Duración", value=curr_time, key=f"time_{idx}_{selected_date}", label_visibility="collapsed")
+                with col_btn_save:
+                    if st.button("💾", key=f"save_c_{idx}_{selected_date}"):
+                        df.loc[idx, 'Distance'] = new_dist if new_dist > 0 else None
+                        df.loc[idx, 'Time'] = new_time if new_time else None
+                        save_data(df)
+                        st.rerun()
+                with col_btn_del:
+                    if st.button("🗑️", key=f"del_c_{idx}_{selected_date}", help="Borrar serie"):
+                        df.drop(idx, inplace=True)
+                        save_data(df)
+                        st.rerun()
+            else:
+                # Se ajustan las columnas para hacer espacio al botón de borrar
+                col_w, col_r, col_badges, col_btn_save, col_btn_del = st.columns([1.8, 1.8, 1.4, 0.7, 0.7])
+                curr_w = format_clean(row['Weight'])
+                curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                 
-                if not hist_ex.empty:
-                    max_weight_hist = hist_ex['Weight'].max()
-                    grouped_hist = hist_ex.groupby('Weight')['Reps'].max()
-                    max_reps_per_weight = grouped_hist.to_dict()
+                with col_w:
+                    new_w = st.number_input("Peso", value=curr_w, step=5.0, format="%.1f", key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
+                with col_r:
+                    new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
                 
-                most_freq_unit = ""
-                for unit_col in ['Weight Unit', 'Distance Unit']:
-                    if unit_col in ex_df.columns:
-                        units = ex_df[unit_col].dropna()
-                        if not units.empty:
-                            most_freq_unit = units.mode().iloc[0]
-                            break
-                
-                st.markdown(f"**{exercise} {f'({most_freq_unit})' if most_freq_unit else ''}**")
-                
-                for idx, row in ex_df.iterrows():
-                    is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
+                with col_badges:
+                    badges_html = ""
+                    check_w = curr_w if curr_w > 0 else 0
+                    check_r = curr_r if curr_r > 0 else 0
                     
-                    if is_cardio:
-                        col1, col2, col_btn = st.columns([2, 2, 1])
-                        curr_dist = format_clean(row['Distance'])
-                        curr_time = str(row['Time']) if pd.notna(row['Time']) else ""
-                        
-                        with col1:
-                            new_dist = st.number_input("Distancia", value=curr_dist, step=0.1, format="%.1f", key=f"dist_{idx}_{selected_date}", label_visibility="collapsed")
-                        with col2:
-                            new_time = st.text_input("Duración", value=curr_time, key=f"time_{idx}_{selected_date}", label_visibility="collapsed")
-                        with col_btn:
-                            if st.button("💾", key=f"save_c_{idx}_{selected_date}"):
-                                df.loc[idx, 'Distance'] = new_dist if new_dist > 0 else None
-                                df.loc[idx, 'Time'] = new_time if new_time else None
-                                save_data(df)
-                                st.rerun()
-                    else:
-                        col_w, col_r, col_badges, col_btn = st.columns([1.8, 1.8, 1.4, 0.9])
-                        curr_w = format_clean(row['Weight'])
-                        curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
-                        
-                        with col_w:
-                            new_w = st.number_input("Peso", value=curr_w, step=5.0, format="%.1f", key=f"w_{idx}_{selected_date}", label_visibility="collapsed")
-                        with col_r:
-                            new_r = st.number_input("Reps", value=int(curr_r), step=1, key=f"r_{idx}_{selected_date}", label_visibility="collapsed")
-                        
-                        with col_badges:
-                            badges_html = ""
-                            check_w = curr_w if curr_w > 0 else 0
-                            check_r = curr_r if curr_r > 0 else 0
-                            
-                            if check_w > 0 and check_w >= max_weight_hist and max_weight_hist > 0:
-                                badges_html += "🔥 <span style='color:#FF4B4B; font-weight:bold;'>Máx Peso</span> "
-                            
-                            if check_w > 0 and check_r > 0:
-                                historical_max_reps_for_w = max_reps_per_weight.get(check_w, 0)
-                                if check_r >= historical_max_reps_for_w and historical_max_reps_for_w > 0:
-                                    badges_html += "🏆 <span style='color:#FFD700; font-weight:bold;'>Récord Reps</span>"
-                            
-                            if badges_html:
-                                st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
+                    if check_w > 0 and check_w >= max_weight_hist and max_weight_hist > 0:
+                        badges_html += "🔥 <span style='color:#FF4B4B; font-weight:bold;'>Máx Peso</span> "
+                    
+                    if check_w > 0 and check_r > 0:
+                        historical_max_reps_for_w = max_reps_per_weight.get(check_w, 0)
+                        if check_r >= historical_max_reps_for_w and historical_max_reps_for_w > 0:
+                            badges_html += "🏆 <span style='color:#FFD700; font-weight:bold;'>Récord Reps</span>"
+                    
+                    if badges_html:
+                        st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
 
-                        with col_btn:
-                            if st.button("💾", key=f"save_w_{idx}_{selected_date}"):
-                                df.loc[idx, 'Weight'] = new_w if new_w > 0 else None
-                                df.loc[idx, 'Reps'] = new_r if new_r > 0 else None
-                                save_data(df)
-                                st.rerun()
+                with col_btn_save:
+                    if st.button("💾", key=f"save_w_{idx}_{selected_date}"):
+                        df.loc[idx, 'Weight'] = new_w if new_w > 0 else None
+                        df.loc[idx, 'Reps'] = new_r if new_r > 0 else None
+                        save_data(df)
+                        st.rerun()
+                with col_btn_del:
+                    if st.button("🗑️", key=f"del_w_{idx}_{selected_date}", help="Borrar serie"):
+                        df.drop(idx, inplace=True)
+                        save_data(df)
+                        st.rerun()
+        
+        # Botones inferiores del ejercicio (Agregar Serie / Borrar Ejercicio Completo)
+        col_add, col_del_ex = st.columns([1.5, 1])
+        with col_add:
+            if st.button(f"➕ Agregar serie", key=f"add_row_{exercise}_{selected_date}"):
+                is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
+                new_row = {
+                    'Date': selected_date, 'Exercise': exercise, 'Category': category,
+                    'Weight Unit': most_freq_unit if not is_cardio_ex else None
+                }
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                save_data(df)
+                st.rerun()
+        with col_del_ex:
+            if st.button(f"🗑️ Borrar Ejercicio", key=f"del_ex_{exercise}_{selected_date}", type="primary"):
+                # Elimina todas las series de este ejercicio en el día consultado usando los índices originales
+                df.drop(ex_df.index, inplace=True)
+                save_data(df)
+                st.rerun()
                 
-                if st.button(f"➕ Agregar serie a {exercise}", key=f"add_row_{exercise}_{selected_date}"):
-                    is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
-                    new_row = {
-                        'Date': selected_date, 'Exercise': exercise, 'Category': category,
-                        'Weight Unit': most_freq_unit if not is_cardio_ex else None
-                    }
-                    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                    save_data(df)
-                    st.rerun()
-                st.divider()
+        st.divider()
 else:
     st.info("No hay registros en esta fecha.")
 
