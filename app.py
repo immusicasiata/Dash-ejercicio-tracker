@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from utils import load_data, save_data, get_cached_date_summary
+from utils import load_data, save_data_local, sync_to_github, get_cached_date_summary
 
 st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
 
@@ -10,7 +10,7 @@ def format_clean(val):
     except: 
         return 0.0
 
-# Función de autoguardado ejecutada silenciosamente al modificar cualquier input
+# Función de autoguardado LOCAL. Protege tus datos al instante sin saturar GitHub
 def update_cell(idx, col, key_name):
     new_val = st.session_state.get(key_name)
     current_df = load_data()
@@ -24,7 +24,7 @@ def update_cell(idx, col, key_name):
         new_val = str(new_val).strip() if new_val and str(new_val).strip() else None
         
     current_df.loc[idx, col] = new_val
-    save_data(current_df)
+    save_data_local(current_df)
 
 st.title("📅 Panel de Entrenamiento")
 df = load_data()
@@ -35,16 +35,28 @@ selected_date = pd.to_datetime(selected_date)
 daily_df = df[df['Date'].dt.date == selected_date.date()].copy()
 
 if not daily_df.empty:
-    st.subheader(f"Registros del {selected_date.strftime('%d/%m/%Y')}")
     
-    # Orden cronológico de los ejercicios
+    col_title, col_save = st.columns([2, 1])
+    with col_title:
+        st.subheader(f"Registros del {selected_date.strftime('%d/%m/%Y')}")
+    with col_save:
+        # Este botón toma la capa local segura y hace el commit hacia GitHub
+        if st.button("☁️ Guardar Cambios en la Nube", type="primary", use_container_width=True):
+            with st.spinner("Sincronizando con GitHub..."):
+                success, msg = sync_to_github(df)
+                if success:
+                    st.success("¡Rutina respaldada exitosamente!")
+                else:
+                    st.error(f"Error al sincronizar: {msg}")
+            
+    st.write("") 
+    
     ordered_exercises = daily_df['Exercise'].unique()
     
     for exercise in ordered_exercises:
         ex_df = daily_df[daily_df['Exercise'] == exercise]
         category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
         
-        # Historial de otras fechas para validar récords
         hist_ex = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())].dropna(subset=['Weight', 'Reps'])
         max_weight_hist = 0.0
         max_reps_per_weight = {}
@@ -99,7 +111,7 @@ if not daily_df.empty:
                     with col_btn_del:
                         if st.button("🗑️", key=f"del_c_{idx}_{selected_date}", help="Borrar serie"):
                             df.drop(idx, inplace=True)
-                            save_data(df)
+                            save_data_local(df)
                             st.rerun()
                 else:
                     col_w, col_r, col_badges, col_btn_del = st.columns([2, 2, 2, 0.7])
@@ -153,7 +165,7 @@ if not daily_df.empty:
                     with col_btn_del:
                         if st.button("🗑️", key=f"del_w_{idx}_{selected_date}", help="Borrar serie"):
                             df.drop(idx, inplace=True)
-                            save_data(df)
+                            save_data_local(df)
                             st.rerun()
             
             st.write("")
@@ -166,12 +178,12 @@ if not daily_df.empty:
                         'Weight Unit': most_freq_unit if not is_cardio_ex else None
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                    save_data(df)
+                    save_data_local(df)
                     st.rerun()
             with col_del_ex:
                 if st.button(f"🗑️ Borrar Ejercicio", key=f"del_ex_{exercise}_{selected_date}", type="primary"):
                     df.drop(ex_df.index, inplace=True)
-                    save_data(df)
+                    save_data_local(df)
                     st.rerun()
 else:
     st.info("No hay registros en esta fecha.")
@@ -191,7 +203,7 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
             if name.strip():
                 u = unit if unit != "Sin unidad" else None
                 df = pd.concat([df, pd.DataFrame([{'Date': selected_date, 'Exercise': name.strip(), 'Category': selected_category, 'Weight Unit': u}])], ignore_index=True)
-                save_data(df)
+                save_data_local(df)
                 st.rerun()
     else:
         st.warning("No hay categorías.")
@@ -216,7 +228,8 @@ with st.expander("🔄 Copiar rutina de otro día"):
                 if st.button("Copiar rutina seleccionada"):
                     new_entries = source_entries.copy()
                     new_entries['Date'] = selected_date
-                    save_data(pd.concat([df, new_entries], ignore_index=True))
+                    df = pd.concat([df, new_entries], ignore_index=True)
+                    save_data_local(df)
                     st.success("¡Copiado!")
                     st.rerun()
             else:
