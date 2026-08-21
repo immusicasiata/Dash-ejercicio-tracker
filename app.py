@@ -28,7 +28,8 @@ if not daily_df.empty:
         ex_df = daily_df[daily_df['Exercise'] == exercise]
         category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
         
-        hist_ex = df[df['Exercise'] == exercise].dropna(subset=['Weight', 'Reps'])
+        # Historial excluyendo el día actual para comparar de manera justa contra el pasado
+        hist_ex = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())].dropna(subset=['Weight', 'Reps'])
         max_weight_hist = 0.0
         max_reps_per_weight = {}
         
@@ -45,7 +46,6 @@ if not daily_df.empty:
                     most_freq_unit = units.mode().iloc[0]
                     break
         
-        # Expandible por ejercicio (reemplaza al st.markdown con emoji)
         header_title = f"{exercise} {f'({most_freq_unit})' if most_freq_unit else ''}"
         with st.expander(header_title, expanded=True):
             
@@ -92,8 +92,11 @@ if not daily_df.empty:
                         
                         if check_w > 0 and check_r > 0:
                             historical_max_reps_for_w = max_reps_per_weight.get(check_w, 0)
-                            if check_r >= historical_max_reps_for_w and historical_max_reps_for_w > 0:
-                                badges_html += "🏆 <span style='color:#FFD700; font-weight:bold;'>Récord Reps</span>"
+                            if historical_max_reps_for_w > 0:
+                                if check_r > historical_max_reps_for_w:
+                                    badges_html += "🏆 <span style='color:#FFD700; font-weight:bold;'>Récord Reps</span>"
+                                elif check_r == historical_max_reps_for_w:
+                                    badges_html += "🤝 <span style='color:#4A90E2; font-weight:bold;'>Iguala Récord</span>"
                         
                         if badges_html:
                             st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
