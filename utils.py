@@ -1,29 +1,78 @@
+import io
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+from github import Github, GithubException
 
-@st.cache_data(ttl=60)
+def get_github_repo():
+    token = st.secrets["github"]["token"]
+    repo_name = st.secrets["github"]["repo"]
+    g = Github(token)
+    return g.get_repo(repo_name)
+
+@st.cache_data
 def load_data():
-    conn = st.connection("gsheets", type=GSheetsConnection)
     try:
-        df = conn.read()
-        df['Date'] = pd.to_datetime(df['Date'])
+        repo = get_github_repo()
+        file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
+        branch = st.secrets["github"].get("branch", "main")
+        
+        # Lectura del archivo Parquet remoto
+        contents = repo.get_contents(file_path, ref=branch)
+        parquet_bytes = contents.decoded_content
+        
+        df = pd.read_parquet(io.BytesIO(parquet_bytes), engine='pyarrow')
+        
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'])
+            
         numeric_cols = ['Weight', 'Reps', 'Distance']
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
+                
         return df.dropna(how='all')
-    except: 
-        return pd.DataFrame()
+    except Exception:
+        # DataFrame por defecto si aún no existe el archivo en GitHub
+        return pd.DataFrame(columns=['Date', 'Category', 'Exercise', 'Weight', 'Reps', 'Distance', 'Time', 'Weight Unit'])
 
 def save_data(df):
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    numeric_cols = ['Weight', 'Reps', 'Distance']
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    conn.update(data=df)
-    st.cache_data.clear()
+    try:
+        numeric_cols = ['Weight', 'Reps', 'Distance']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+        repo = get_github_repo()
+        file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
+        branch = st.secrets["github"].get("branch", "main")
+        
+        # Conversión del DataFrame a buffer Parquet en memoria
+        buffer = io.BytesIO()
+        df.to_parquet(buffer, index=False, engine='pyarrow')
+        content_bytes = buffer.getvalue()
+        
+        try:
+            # Actualización del archivo en GitHub
+            contents = repo.get_contents(file_path, ref=branch)
+            repo.update_file(
+                path=file_path,
+                message="update: actualización automática de entrenamientos",
+                content=content_bytes,
+                sha=contents.sha,
+                branch=branch
+            )
+        except GithubException:
+            # Creación inicial si no existe el archivo
+            repo.create_file(
+                path=file_path,
+                message="feat: inicialización de entrenamientos",
+                content=content_bytes,
+                branch=branch
+            )
+            
+        st.cache_data.clear()
+    except Exception as e:
+        st.error(f"Error al sincronizar con GitHub API: {e}")
 
 @st.cache_data(ttl=3600)
 def get_cached_date_summary(df_cached):
