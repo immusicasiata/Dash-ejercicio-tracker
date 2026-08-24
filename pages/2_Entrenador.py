@@ -17,9 +17,8 @@ if not df.empty:
     # --- 2. CONFIGURACIÓN DEL PROGRAMA DE FUERZA ---
     st.header("1. Configuración del Programa")
     
-    col_prog, col_fase = st.columns([1.5, 2.5])
+    col_prog, col_fase = st.columns([1.2, 2.8])
     with col_prog:
-        # 5/3/1 configurado como primera opción por defecto (index=0)
         programa = st.selectbox(
             "Programa de fuerza:", 
             ["5/3/1 (Periodización)", "5x5 (Progresión Lineal)"],
@@ -31,7 +30,7 @@ if not df.empty:
         if programa == "5/3/1 (Periodización)":
             semana = st.radio(
                 "Fase del ciclo 5/3/1:", 
-                ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)"], 
+                ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"], 
                 horizontal=True
             )
 
@@ -47,7 +46,6 @@ if not df.empty:
         dates_list = [item[0] for item in date_summary]
         labels_list = [item[1] for item in date_summary]
         
-        # Selector de fecha a evaluar
         selected_idx = st.selectbox(
             "Selecciona la fecha de entrenamiento a evaluar:",
             range(len(dates_list)),
@@ -55,18 +53,15 @@ if not df.empty:
         )
         eval_date = dates_list[selected_idx]
         
-        # Ejercicios realizados en esa fecha específica
         df_eval_date = df[df['Date'].dt.date == eval_date]
         ex_on_date = df_eval_date['Exercise'].dropna().unique().tolist()
         
-        # Filtro multiselect para escoger qué ejercicios usar de ese día
         ejercicios_seleccionados = st.multiselect(
             "Selecciona los ejercicios a los que deseas aplicar el programa hoy:",
             options=ex_on_date,
             default=ex_on_date
         )
         
-        # Generar las series para todos los ejercicios seleccionados
         for exercise in ejercicios_seleccionados:
             hist_ej = df[df['Exercise'] == exercise].dropna(subset=['Weight', 'Reps'])
             
@@ -80,15 +75,18 @@ if not df.empty:
                 if pd.isna(max_peso_5reps): 
                     max_peso_5reps = mejor_1rm * 0.75
                 
-                # Lógica 5/3/1
+                # Lógica 5/3/1 con Semana de Descarga incorporada
                 if programa == "5/3/1 (Periodización)":
                     tm = mejor_1rm * 0.90  # Training Max
+                    
                     if semana == "Semana 1 (3x5)":
                         porcentajes, reps = [0.65, 0.75, 0.85], [5, 5, 5]
                     elif semana == "Semana 2 (3x3)":
                         porcentajes, reps = [0.70, 0.80, 0.90], [3, 3, 3]
-                    else:
+                    elif semana == "Semana 3 (5, 3, 1)":
                         porcentajes, reps = [0.75, 0.85, 0.95], [5, 3, 1]
+                    else:  # Semana 4 (Descarga)
+                        porcentajes, reps = [0.40, 0.50, 0.60], [5, 5, 5]
                         
                     for p, r in zip(porcentajes, reps):
                         peso_calc = round((tm * p) / 2.5) * 2.5
@@ -193,7 +191,6 @@ if not df.empty:
         rutina_final_lista = []
         fecha_hoy = pd.to_datetime("today").normalize()
         
-        # 1. Empaquetar los ejercicios principales procesados con 5/3/1 o 5x5
         if not rutina_principal_editada.empty:
             for _, row in rutina_principal_editada.iterrows():
                 rutina_final_lista.append({
@@ -204,7 +201,6 @@ if not df.empty:
                     'Reps': row['Reps']
                 })
                 
-        # 2. Desempaquetar los accesorios
         for acc in st.session_state["accesorios_temporales"]:
             for _ in range(acc["Sets"]):
                 rutina_final_lista.append({
