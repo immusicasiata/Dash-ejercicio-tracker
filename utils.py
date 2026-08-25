@@ -105,3 +105,38 @@ def get_cached_date_summary(df_cached):
         cats_str = ", ".join(cats) if len(cats) > 0 else "Sin categoría"
         date_summary.append((d, f"{date_icon}{d.strftime('%d/%m/%Y')} — {cats_str}"))
     return date_summary
+
+
+
+def calcular_series_531(df_historial, ejercicio, semana):
+    """
+    Calcula las 3 series de 5/3/1 basándose en el 1RM histórico absoluto del ejercicio.
+    """
+    if df_historial.empty:
+        return []
+        
+    hist_ej = df_historial[df_historial['Exercise'] == ejercicio].dropna(subset=['Weight', 'Reps'])
+    if hist_ej.empty:
+        return []
+
+    # Estimación del 1RM histórico absoluto (Fórmula Brzycki)
+    hist_ej['1RM_Est'] = hist_ej['Weight'] * (36 / (37 - hist_ej['Reps']))
+    mejor_1rm = hist_ej['1RM_Est'].max()
+    tm = mejor_1rm * 0.90  # Training Max (90%)
+
+    # Mapeo de porcentajes y repeticiones por semana
+    esquemas = {
+        "Semana 1 (3x5)": ([0.65, 0.75, 0.85], [5, 5, 5]),
+        "Semana 2 (3x3)": ([0.70, 0.80, 0.90], [3, 3, 3]),
+        "Semana 3 (5, 3, 1)": ([0.75, 0.85, 0.95], [5, 3, 1]),
+        "Semana 4 (Descarga)": ([0.40, 0.50, 0.60], [5, 5, 5])
+    }
+    
+    porcentajes, reps = esquemas.get(semana, ([0.65, 0.75, 0.85], [5, 5, 5]))
+    
+    series_sugeridas = []
+    for p, r in zip(porcentajes, reps):
+        peso_calc = round((tm * p) / 2.5) * 2.5  # Redondeo al tramo de 2.5 kg más cercano
+        series_sugeridas.append({"Weight": peso_calc, "Reps": r})
+        
+    return series_sugeridas

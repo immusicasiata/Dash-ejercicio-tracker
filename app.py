@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from utils import load_data, save_data_local, sync_to_github, get_cached_date_summary
+# Importamos la función de cálculo desde utils
+from utils import load_data, save_data_local, sync_to_github, get_cached_date_summary, calcular_series_531
 
 st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
 
@@ -25,6 +26,15 @@ def update_cell(idx, col, key_name):
         
     current_df.loc[idx, col] = new_val
     save_data_local(current_df)
+
+# --- 1. CONFIGURACIÓN DEL ENTRENADOR EN LA BARRA LATERAL ---
+with st.sidebar:
+    st.header("⚙️ Entrenador 5/3/1")
+    st.markdown("Selecciona la semana para calcular las series sugeridas de tus levantamientos.")
+    semana_activa = st.radio(
+        "Fase del ciclo actual:",
+        ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"]
+    )
 
 st.title("📅 Panel de Entrenamiento")
 df = load_data()
@@ -169,10 +179,16 @@ if not daily_df.empty:
                             st.rerun()
             
             st.write("")
-            col_add, col_del_ex = st.columns([1.5, 1])
+            
+            # --- 2. BOTONES DE ACCIÓN POR EJERCICIO ---
+            # Identificar si el ejercicio es de cardio para evitar mostrar sugerencias de 5/3/1
+            is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
+            
+            # Ajustamos las columnas para dar espacio al nuevo botón del entrenador
+            col_add, col_531, col_del_ex = st.columns([1.3, 1.7, 1])
+            
             with col_add:
                 if st.button(f"➕ Agregar serie", key=f"add_row_{exercise}_{selected_date}"):
-                    is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
                     new_row = {
                         'Date': selected_date, 'Exercise': exercise, 'Category': category,
                         'Weight Unit': most_freq_unit if not is_cardio_ex else None
@@ -180,6 +196,34 @@ if not daily_df.empty:
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     save_data_local(df)
                     st.rerun()
+            
+            with col_531:
+                # El botón del entrenador solo aparece si NO es cardio
+                if not is_cardio_ex:
+                    if st.button(f"💡 Cargar series 5/3/1", key=f"btn_531_{exercise}_{selected_date}"):
+                        # Extraemos el historial de la base general, excluyendo lo de hoy
+                        historial_ejercicio = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())]
+                        
+                        series_sugeridas = calcular_series_531(historial_ejercicio, exercise, semana_activa)
+                        
+                        if series_sugeridas:
+                            nuevas_series = []
+                            for s in series_sugeridas:
+                                nuevas_series.append({
+                                    'Date': selected_date, 
+                                    'Exercise': exercise, 
+                                    'Category': category,
+                                    'Weight': s["Weight"],
+                                    'Reps': s["Reps"],
+                                    'Weight Unit': most_freq_unit
+                                })
+                            # Agregamos todas las series al dataframe principal de golpe
+                            df = pd.concat([df, pd.DataFrame(nuevas_series)], ignore_index=True)
+                            save_data_local(df)
+                            st.rerun()
+                        else:
+                            st.warning("No hay historial previo de Peso/Reps para calcular tu 1RM.")
+                            
             with col_del_ex:
                 if st.button(f"🗑️ Borrar Ejercicio", key=f"del_ex_{exercise}_{selected_date}", type="primary"):
                     df.drop(ex_df.index, inplace=True)
