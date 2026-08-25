@@ -163,6 +163,21 @@ def obtener_siguiente_semana_531(df_historial, ejercicio):
     except ValueError:
         return "Semana 1 (3x5)"
 
+def obtener_estado_actual_programa(df):
+    """Devuelve el programa y la semana más recientes registrados en el historial (global)."""
+    if df.empty or 'Program' not in df.columns or 'Week' not in df.columns:
+        return None, None
+    df_prog = df.dropna(subset=['Program', 'Date'])
+    if df_prog.empty:
+        return None, None
+    latest_date = df_prog['Date'].max()
+    latest_entries = df_prog[df_prog['Date'] == latest_date]
+    if latest_entries.empty:
+        return None, None
+    prog = latest_entries['Program'].dropna().iloc[0] if not latest_entries['Program'].dropna().empty else None
+    week = latest_entries['Week'].dropna().iloc[0] if not latest_entries['Week'].dropna().empty else None
+    return prog, week
+
 def obtener_estado_programa_ejercicio(df_historial, ejercicio):
     """Devuelve el último programa y semana registrados para un ejercicio específico."""
     if df_historial.empty or 'Program' not in df_historial.columns or 'Week' not in df_historial.columns:
