@@ -82,10 +82,12 @@ if not daily_df.empty:
                     break
         
         header_title = f"{exercise} {f'({most_freq_unit})' if most_freq_unit else ''}"
-        with st.expander(header_title, expanded=True):
+        
+        # Modificado a expanded=False para que aparezcan contraídos por defecto
+        with st.expander(header_title, expanded=False):
             
             for i, row in ex_df.iterrows():
-                row_id = row['row_id'] # Identificador único e inalterable de la fila
+                row_id = row['row_id']
                 is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
                 
                 if is_cardio:
@@ -122,7 +124,6 @@ if not daily_df.empty:
                                 if k in st.session_state:
                                     del st.session_state[k]
                             
-                            # Eliminación directa y exacta usando row_id
                             df = df[df['row_id'] != row_id]
                             save_data_local(df)
                             st.rerun()
@@ -181,7 +182,6 @@ if not daily_df.empty:
                                 if k in st.session_state:
                                     del st.session_state[k]
                             
-                            # Eliminación directa y exacta usando row_id
                             df = df[df['row_id'] != row_id]
                             save_data_local(df)
                             st.rerun()
@@ -296,7 +296,6 @@ with st.expander("🔄 Copiar rutina de otro día"):
                 if st.button("Copiar rutina seleccionada", key="btn_execute_copy"):
                     new_entries = source_entries.copy()
                     new_entries['Date'] = selected_date
-                    # Generar nuevos row_id únicos para los elementos copiados
                     new_entries['row_id'] = [str(uuid.uuid4()) for _ in range(len(new_entries))]
                     df = pd.concat([df, new_entries], ignore_index=True)
                     save_data_local(df)
