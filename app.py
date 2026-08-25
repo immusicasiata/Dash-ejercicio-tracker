@@ -6,8 +6,8 @@ from utils import (
     save_data_local, 
     sync_to_github, 
     get_cached_date_summary, 
-    obtener_siguiente_semana_531,
-    obtener_estado_actual_programa,
+    obtener_semana_objetivo_ejercicio,
+    obtener_estado_programa_ejercicio,
     calcular_series_531, 
     calcular_series_5x5, 
     format_clean, 
@@ -18,44 +18,19 @@ st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
 
 df = load_data()
 
-# --- 1. CONFIGURACIÓN DEL ENTRENADOR EN LA BARRA LATERAL ---
 with st.sidebar:
     st.header("⚙️ Entrenador Inteligente")
     
-    # Mostrar indicador visual del estado actual del programa según el historial
-    prog_hist, semana_hist = obtener_estado_actual_programa(df)
-    if prog_hist:
-        st.markdown("---")
-        st.markdown("📊 **Estado Actual del Ciclo**")
-        st.success(f"• **Programa:** {prog_hist}\n• **Última fase:** {semana_hist}")
-        st.markdown("---")
-    
     programa_activo = st.selectbox(
-        "Programa de fuerza:", 
+        "Programa global por defecto:", 
         ["5/3/1 (Periodización)", "5x5 (Progresión Lineal)"],
         index=0
     )
     
-    semana_activa = None
     if programa_activo == "5/3/1 (Periodización)":
-        st.markdown("Selecciona la semana para calcular las series sugeridas.")
-        
-        semana_sugerida_default = "Semana 1 (3x5)"
-        if not df.empty:
-            ultimo_ej = df['Exercise'].iloc[-1] if 'Exercise' in df.columns else None
-            if ultimo_ej:
-                semana_sugerida_default = obtener_siguiente_semana_531(df, ultimo_ej)
-        
-        opciones_semana = ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"]
-        default_idx = opciones_semana.index(semana_sugerida_default) if semana_sugerida_default in opciones_semana else 0
-        
-        semana_activa = st.radio(
-            "Fase del ciclo actual:",
-            opciones_semana,
-            index=default_idx
-        )
+        st.markdown("ℹ️ *Cada ejercicio calcula su semana de forma 100% independiente según su propio historial.*")
     else:
-        st.info("El programa 5x5 buscará tu récord a 5 repeticiones y le sumará 2.5 kg para generar 5 series de 5 repeticiones.")
+        st.info("El programa 5x5 calculará 5 series de 5 reps sumando 2.5 kg a tu récord previo a 5 reps.")
 
 st.title("📅 Panel de Entrenamiento")
 
@@ -78,12 +53,6 @@ if not daily_df.empty:
                 else:
                     st.error(f"Error al sincronizar: {msg}")
             
-    # --- Banner informativo si la fecha actual tiene un programa asociado ---
-    programas_en_dia = daily_df['Program'].dropna().unique() if 'Program' in daily_df.columns else []
-    semanas_en_dia = daily_df['Week'].dropna().unique() if 'Week' in daily_df.columns else []
-    if len(programas_en_dia) > 0:
-        st.info(f"🎯 **Programa detectado en este día:** {programas_en_dia[0]} — *{semanas_en_dia[0] if len(semanas_en_dia) > 0 else ''}*")
-            
     st.write("") 
     
     ordered_exercises = daily_df['Exercise'].unique()
@@ -92,7 +61,9 @@ if not daily_df.empty:
         ex_df = daily_df[daily_df['Exercise'] == exercise].reset_index(drop=True)
         category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
         
-        hist_ex = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())].dropna(subset=['Weight', 'Reps'])
+        hist_ex_global = df[(df['Exercise'] == exercise) & (df['Date'].dt.date < selected_date.date())]
+        hist_ex = hist_ex_global.dropna(subset=['Weight', 'Reps'])
+        
         max_weight_hist = 0.0
         max_reps_per_weight = {}
         
@@ -109,11 +80,21 @@ if not daily_df.empty:
                     most_freq_unit = units.mode().iloc[0]
                     break
         
+        # --- CÁLCULO INDEPENDIENTE DE LA SEMANA DEL EJERCICIO ---
+        semana_objetivo_ex = obtener_semana_objetivo_ejercicio(df, exercise, selected_date)
+        prog_previo, semana_previa = obtener_estado_programa_ejercicio(df, exercise, selected_date)
+        
         prog_en_dia = ex_df.iloc[0].get('Program')
         week_en_dia = ex_df.iloc[0].get('Week')
-        prog_badge = f" [{prog_en_dia} - {week_en_dia}]" if pd.notna(prog_en_dia) else ""
         
-        header_title = f"{exercise} {f'({most_freq_unit})' if most_freq_unit else ''}{prog_badge}"
+        if pd.notna(prog_en_dia) and pd.notna(week_en_dia):
+            estado_badge = f" [{prog_en_dia} - {week_en_dia}]"
+        elif semana_previa:
+            estado_badge = f" [{prog_previo}: {semana_previa} ➡️ Siguiente sugerida: {semana_objetivo_ex.split()[0]} {semana_objetivo_ex.split()[1]}]"
+        else:
+            estado_badge = f" [Inicio de Ciclo ➡️ {semana_objetivo_ex.split()[0]} {semana_objetivo_ex.split()[1]}]"
+        
+        header_title = f"{exercise} {f'({most_freq_unit})' if most_freq_unit else ''}{estado_badge}"
         
         with st.expander(header_title, expanded=False):
             
@@ -182,7 +163,6 @@ if not daily_df.empty:
             
             st.write("")
             
-            # --- 2. BOTONES DE ACCIÓN POR EJERCICIO ---
             is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
             
             col_add, col_prog, col_del_ex = st.columns([1.3, 1.7, 1])
@@ -203,19 +183,17 @@ if not daily_df.empty:
             with col_prog:
                 if not is_cardio_ex:
                     if programa_activo == "5/3/1 (Periodización)":
-                        btn_label = f"💡 Cargar 5/3/1 ({semana_activa.split()[0]} {semana_activa.split()[1]})"
+                        btn_label = f"💡 Cargar 5/3/1 ({semana_objetivo_ex.split()[0]} {semana_objetivo_ex.split()[1]})"
                     else:
                         btn_label = "💡 Cargar 5x5"
                     
                     if st.button(btn_label, key=f"btn_prog_{exercise}"):
-                        historial_ejercicio = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())]
-                        
                         if programa_activo == "5/3/1 (Periodización)":
-                            series_sugeridas = calcular_series_531(historial_ejercicio, exercise, semana_activa)
+                            series_sugeridas = calcular_series_531(hist_ex_global, exercise, semana_objetivo_ex)
                             prog_val = "5/3/1"
-                            week_val = semana_activa
+                            week_val = semana_objetivo_ex
                         else:
-                            series_sugeridas = calcular_series_5x5(historial_ejercicio, exercise)
+                            series_sugeridas = calcular_series_5x5(hist_ex_global, exercise)
                             prog_val = "5x5"
                             week_val = "Progresión 5x5"
                         
@@ -279,7 +257,7 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
         st.warning("No hay categorías.")
 
 st.divider()
-with st.expander("🔄 Copiar rutina de otro día (con avance inteligente de 5/3/1)"):
+with st.expander("🔄 Copiar rutina de otro día (con avance inteligente independiente)"):
     s_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
     s_date = pd.to_datetime(s_date)
     
@@ -296,7 +274,7 @@ with st.expander("🔄 Copiar rutina de otro día (con avance inteligente de 5/3
                 st.write(f"Vista previa ({target_date.strftime('%d/%m/%Y')}):")
                 st.dataframe(source_entries[['Category', 'Exercise', 'Weight', 'Reps', 'Program', 'Week']].drop_duplicates(), use_container_width=True, hide_index=True)
                 
-                auto_avanzar_531 = st.checkbox("Avanzar automáticamente la semana de 5/3/1 al copiar", value=True)
+                auto_avanzar_531 = st.checkbox("Avanzar automáticamente la semana de 5/3/1 por cada ejercicio", value=True)
                 
                 if st.button("Copiar rutina seleccionada", key="btn_execute_copy"):
                     new_entries = source_entries.copy()
@@ -339,7 +317,7 @@ with st.expander("🔄 Copiar rutina de otro día (con avance inteligente de 5/3
                     
                     df = pd.concat([df, new_entries], ignore_index=True)
                     save_data_local(df)
-                    st.success("¡Rutina copiada y adaptada inteligentemente!")
+                    st.success("¡Rutina copiada y adaptada inteligentemente por ejercicio!")
                     st.rerun()
             else:
                 st.warning("No hay registros en esa fecha.")
