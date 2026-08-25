@@ -1,3 +1,4 @@
+import uuid
 import streamlit as st
 import pandas as pd
 from utils import (
@@ -60,7 +61,6 @@ if not daily_df.empty:
     ordered_exercises = daily_df['Exercise'].unique()
     
     for exercise in ordered_exercises:
-        # Reseteamos el índice local de este subconjunto para iterar limpiamente con enumerate
         ex_df = daily_df[daily_df['Exercise'] == exercise].reset_index(drop=True)
         category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
         
@@ -85,6 +85,7 @@ if not daily_df.empty:
         with st.expander(header_title, expanded=True):
             
             for i, row in ex_df.iterrows():
+                row_id = row['row_id'] # Identificador único e inalterable de la fila
                 is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
                 
                 if is_cardio:
@@ -92,12 +93,8 @@ if not daily_df.empty:
                     curr_dist = format_clean(row['Distance'])
                     curr_time = str(row['Time']) if pd.notna(row['Time']) else ""
                     
-                    key_dist = f"dist_{exercise}_{i}"
-                    key_time = f"time_{exercise}_{i}"
-                    
-                    # Para mantener sincronizado el input con el df maestro, necesitamos el real_idx actual de esta fila específica
-                    target_rows_init = df[(df['Date'].dt.date == selected_date.date()) & (df['Exercise'] == exercise)]
-                    real_idx_init = target_rows_init.index[i] if not target_rows_init.index.empty else i
+                    key_dist = f"dist_{row_id}"
+                    key_time = f"time_{row_id}"
                     
                     with col1:
                         st.number_input(
@@ -107,7 +104,7 @@ if not daily_df.empty:
                             format="%.1f", 
                             key=key_dist, 
                             on_change=update_cell, 
-                            args=(real_idx_init, 'Distance', key_dist),
+                            args=(row_id, 'Distance', key_dist),
                             label_visibility="collapsed"
                         )
                     with col2:
@@ -116,31 +113,26 @@ if not daily_df.empty:
                             value=curr_time, 
                             key=key_time, 
                             on_change=update_cell, 
-                            args=(real_idx_init, 'Time', key_time),
+                            args=(row_id, 'Time', key_time),
                             label_visibility="collapsed"
                         )
                     with col_btn_del:
-                        if st.button("🗑️", key=f"del_c_{exercise}_{i}", help="Borrar serie"):
+                        if st.button("🗑️", key=f"del_c_{row_id}", help="Borrar serie"):
                             for k in [key_dist, key_time]:
                                 if k in st.session_state:
                                     del st.session_state[k]
                             
-                            target_rows = df[(df['Date'].dt.date == selected_date.date()) & (df['Exercise'] == exercise)]
-                            if not target_rows.empty and i < len(target_rows):
-                                row_to_drop = target_rows.index[i]
-                                df.drop(row_to_drop, inplace=True)
-                                save_data_local(df)
-                                st.rerun()
+                            # Eliminación directa y exacta usando row_id
+                            df = df[df['row_id'] != row_id]
+                            save_data_local(df)
+                            st.rerun()
                 else:
                     col_w, col_r, col_badges, col_btn_del = st.columns([2, 2, 2, 0.7])
                     curr_w = format_clean(row['Weight'])
                     curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                     
-                    key_w = f"w_{exercise}_{i}"
-                    key_r = f"r_{exercise}_{i}"
-                    
-                    target_rows_init = df[(df['Date'].dt.date == selected_date.date()) & (df['Exercise'] == exercise)]
-                    real_idx_init = target_rows_init.index[i] if not target_rows_init.index.empty else i
+                    key_w = f"w_{row_id}"
+                    key_r = f"r_{row_id}"
                     
                     with col_w:
                         st.number_input(
@@ -150,7 +142,7 @@ if not daily_df.empty:
                             format="%.1f", 
                             key=key_w, 
                             on_change=update_cell, 
-                            args=(real_idx_init, 'Weight', key_w),
+                            args=(row_id, 'Weight', key_w),
                             label_visibility="collapsed"
                         )
                     with col_r:
@@ -160,7 +152,7 @@ if not daily_df.empty:
                             step=1, 
                             key=key_r, 
                             on_change=update_cell, 
-                            args=(real_idx_init, 'Reps', key_r),
+                            args=(row_id, 'Reps', key_r),
                             label_visibility="collapsed"
                         )
                     
@@ -184,17 +176,15 @@ if not daily_df.empty:
                             st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
 
                     with col_btn_del:
-                        if st.button("🗑️", key=f"del_w_{exercise}_{i}", help="Borrar serie"):
+                        if st.button("🗑️", key=f"del_w_{row_id}", help="Borrar serie"):
                             for k in [key_w, key_r]:
                                 if k in st.session_state:
                                     del st.session_state[k]
                             
-                            target_rows = df[(df['Date'].dt.date == selected_date.date()) & (df['Exercise'] == exercise)]
-                            if not target_rows.empty and i < len(target_rows):
-                                row_to_drop = target_rows.index[i]
-                                df.drop(row_to_drop, inplace=True)
-                                save_data_local(df)
-                                st.rerun()
+                            # Eliminación directa y exacta usando row_id
+                            df = df[df['row_id'] != row_id]
+                            save_data_local(df)
+                            st.rerun()
             
             st.write("")
             
@@ -206,7 +196,10 @@ if not daily_df.empty:
             with col_add:
                 if st.button(f"➕ Agregar serie", key=f"add_row_{exercise}"):
                     new_row = {
-                        'Date': selected_date, 'Exercise': exercise, 'Category': category,
+                        'row_id': str(uuid.uuid4()),
+                        'Date': selected_date, 
+                        'Exercise': exercise, 
+                        'Category': category,
                         'Weight Unit': most_freq_unit if not is_cardio_ex else None
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
@@ -229,6 +222,7 @@ if not daily_df.empty:
                             nuevas_series = []
                             for s in series_sugeridas:
                                 nuevas_series.append({
+                                    'row_id': str(uuid.uuid4()),
                                     'Date': selected_date, 
                                     'Exercise': exercise, 
                                     'Category': category,
@@ -245,11 +239,11 @@ if not daily_df.empty:
             with col_del_ex:
                 if st.button(f"🗑️ Borrar Ejercicio", key=f"del_ex_{exercise}", type="primary"):
                     target_ex_rows = df[(df['Date'].dt.date == selected_date.date()) & (df['Exercise'] == exercise)]
-                    for idx_pos, idx_row in enumerate(target_ex_rows.index):
-                        for k in [f"w_{exercise}_{idx_pos}", f"r_{exercise}_{idx_pos}", f"dist_{exercise}_{idx_pos}", f"time_{exercise}_{idx_pos}"]:
+                    for r_id in target_ex_rows['row_id']:
+                        for k in [f"w_{r_id}", f"r_{r_id}", f"dist_{r_id}", f"time_{r_id}"]:
                             if k in st.session_state:
                                 del st.session_state[k]
-                    df.drop(target_ex_rows.index, inplace=True)
+                    df = df[~((df['Date'].dt.date == selected_date.date()) & (df['Exercise'] == exercise))]
                     save_data_local(df)
                     st.rerun()
 else:
@@ -269,7 +263,14 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
         if st.button("Guardar e iniciar", key="btn_save_new_ex"):
             if name.strip():
                 u = unit if unit != "Sin unidad" else None
-                df = pd.concat([df, pd.DataFrame([{'Date': selected_date, 'Exercise': name.strip(), 'Category': selected_category, 'Weight Unit': u}])], ignore_index=True)
+                new_row = {
+                    'row_id': str(uuid.uuid4()),
+                    'Date': selected_date, 
+                    'Exercise': name.strip(), 
+                    'Category': selected_category, 
+                    'Weight Unit': u
+                }
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                 save_data_local(df)
                 st.rerun()
     else:
@@ -295,6 +296,8 @@ with st.expander("🔄 Copiar rutina de otro día"):
                 if st.button("Copiar rutina seleccionada", key="btn_execute_copy"):
                     new_entries = source_entries.copy()
                     new_entries['Date'] = selected_date
+                    # Generar nuevos row_id únicos para los elementos copiados
+                    new_entries['row_id'] = [str(uuid.uuid4()) for _ in range(len(new_entries))]
                     df = pd.concat([df, new_entries], ignore_index=True)
                     save_data_local(df)
                     st.success("¡Copiado!")

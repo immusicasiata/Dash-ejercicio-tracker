@@ -1,5 +1,6 @@
 import io
 import os
+import uuid
 import streamlit as st
 import pandas as pd
 from github import Github, GithubException
@@ -14,60 +15,63 @@ def get_github_repo():
 
 @st.cache_data
 def load_data():
+    df = None
     if os.path.exists(LOCAL_FILE):
         try:
             df = pd.read_parquet(LOCAL_FILE, engine='pyarrow')
-            if 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date'])
-            # IMPORTANTE: Forzar índices limpios al cargar desde local
-            return df.dropna(how='all').reset_index(drop=True)
         except Exception:
             pass
 
-    try:
-        repo = get_github_repo()
-        file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
-        branch = st.secrets["github"].get("branch", "main")
-        
-        contents = repo.get_contents(file_path, ref=branch)
-        parquet_bytes = contents.decoded_content
-        df = pd.read_parquet(io.BytesIO(parquet_bytes), engine='pyarrow')
-        
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'])
+    if df is None or df.empty:
+        try:
+            repo = get_github_repo()
+            file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
+            branch = st.secrets["github"].get("branch", "main")
             
-        numeric_cols = ['Weight', 'Reps', 'Distance']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-                
-        # IMPORTANTE: Limpiar índices antes de guardar localmente
-        df = df.dropna(how='all').reset_index(drop=True)
-        df.to_parquet(LOCAL_FILE, index=False, engine='pyarrow')
-        return df
-    
-    except Exception:
-        return pd.DataFrame(columns=['Date', 'Category', 'Exercise', 'Weight', 'Reps', 'Distance', 'Time', 'Weight Unit'])
+            contents = repo.get_contents(file_path, ref=branch)
+            parquet_bytes = contents.decoded_content
+            df = pd.read_parquet(io.BytesIO(parquet_bytes), engine='pyarrow')
+        except Exception:
+            df = pd.DataFrame(columns=['row_id', 'Date', 'Category', 'Exercise', 'Weight', 'Reps', 'Distance', 'Time', 'Weight Unit'])
+
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'])
+            
+    numeric_cols = ['Weight', 'Reps', 'Distance']
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Garantizar que todas las filas tengan un row_id único y válido
+    if 'row_id' not in df.columns or df['row_id'].isnull().any() or df['row_id'].duplicated().any():
+        df['row_id'] = [str(uuid.uuid4()) for _ in range(len(df))]
+        
+    return df.dropna(how='all').reset_index(drop=True)
 
 def save_data_local(df):
-    """Guarda los cambios inmediatamente en el servidor asegurando índices limpios."""
+    """Guarda los cambios localmente asegurando row_id y limpieza de índices."""
+    if 'row_id' not in df.columns or df['row_id'].isnull().any():
+        df['row_id'] = [str(uuid.uuid4()) for _ in range(len(df))]
+        
     numeric_cols = ['Weight', 'Reps', 'Distance']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
             
-    # IMPORTANTE: Reindexar antes de guardar para evitar desalineaciones en la interfaz
     df_clean = df.reset_index(drop=True)
     df_clean.to_parquet(LOCAL_FILE, index=False, engine='pyarrow')
     st.cache_data.clear()
 
 def sync_to_github(df):
-    """Envía el archivo local a GitHub manteniendo la integridad de los índices."""
+    """Envía el archivo local a GitHub."""
     try:
         repo = get_github_repo()
         file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
         branch = st.secrets["github"].get("branch", "main")
         
+        if 'row_id' not in df.columns or df['row_id'].isnull().any():
+            df['row_id'] = [str(uuid.uuid4()) for _ in range(len(df))]
+            
         df_clean = df.reset_index(drop=True)
         buffer = io.BytesIO()
         df_clean.to_parquet(buffer, index=False, engine='pyarrow')
@@ -109,14 +113,13 @@ def get_cached_date_summary(df_cached):
     return date_summary
 
 def format_clean(val):
-    """Convierte un valor numérico a float limpio de forma segura."""
     try: 
         return float(val)
     except: 
         return 0.0
 
-def update_cell(idx, col, key_name):
-    """Actualiza una celda en el DataFrame local asegurando el índice correcto."""
+def update_cell(row_id, col, key_name):
+    """Actualiza una celda buscando directamente por el row_id único."""
     new_val = st.session_state.get(key_name)
     current_df = load_data()
     
@@ -128,12 +131,12 @@ def update_cell(idx, col, key_name):
     elif col == 'Time':
         new_val = str(new_val).strip() if new_val and str(new_val).strip() else None
         
-    if idx in current_df.index:
-        current_df.loc[idx, col] = new_val
+    mask = current_df['row_id'] == row_id
+    if mask.any():
+        current_df.loc[mask, col] = new_val
         save_data_local(current_df)
 
 def calcular_series_531(df_historial, ejercicio, semana):
-    """Calcula las 3 series de 5/3/1 basándose en el 1RM histórico absoluto del ejercicio."""
     if df_historial.empty:
         return []
         
@@ -162,7 +165,6 @@ def calcular_series_531(df_historial, ejercicio, semana):
     return series_sugeridas
 
 def calcular_series_5x5(df_historial, ejercicio):
-    """Calcula las 5 series de 5 repeticiones basándose en la mejor marca a 5 reps + 2.5kg."""
     if df_historial.empty:
         return []
         
