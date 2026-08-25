@@ -27,8 +27,15 @@ with st.sidebar:
         index=0
     )
     
+    semana_manual = "Automático"
     if programa_activo == "5/3/1 (Periodización)":
-        st.markdown("ℹ️ *Cada ejercicio calcula su semana de forma 100% independiente según su propio historial.*")
+        st.markdown("ℹ️ *Cada ejercicio calcula su semana de forma independiente.*")
+        semana_manual = st.selectbox(
+            "Sobreescribir semana al cargar (Opcional):",
+            ["Automático", "Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"],
+            index=0,
+            help="Al seleccionar una semana, solo se aplicará al ejercicio donde presiones el botón de cargar."
+        )
     else:
         st.info("El programa 5x5 calculará 5 series de 5 reps sumando 2.5 kg a tu récord previo a 5 reps.")
 
@@ -61,7 +68,7 @@ if not daily_df.empty:
         ex_df = daily_df[daily_df['Exercise'] == exercise].reset_index(drop=True)
         category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
         
-        # Filtro: ¿Es una categoría excluida de los programas de fuerza?
+        # Filtro de categorías excluidas
         cat_str = str(category).lower()
         is_excluded_from_strength = "alta repetición" in cat_str or "resistencia" in cat_str or "cardio" in cat_str
         is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
@@ -85,22 +92,22 @@ if not daily_df.empty:
                     most_freq_unit = units.mode().iloc[0]
                     break
         
-        # --- CÁLCULO INDEPENDIENTE DE LA SEMANA DEL EJERCICIO ---
-        semana_objetivo_ex = obtener_semana_objetivo_ejercicio(df, exercise, selected_date)
+        # CÁLCULO AUTOMÁTICO INDEPENDIENTE (Permanece visible en el título)
+        semana_objetivo_auto = obtener_semana_objetivo_ejercicio(df, exercise, selected_date)
         prog_previo, semana_previa = obtener_estado_programa_ejercicio(df, exercise, selected_date)
         
         prog_en_dia = ex_df.iloc[0].get('Program')
         week_en_dia = ex_df.iloc[0].get('Week')
         
-        # Ajuste de títulos: No mostramos ciclos si están excluidos
+        # El título del encabezado SIEMPRE refleja el estado automático o el estado ya guardado
         if is_excluded_from_strength or is_cardio_ex:
             estado_badge = ""
         elif pd.notna(prog_en_dia) and pd.notna(week_en_dia):
             estado_badge = f" [{prog_en_dia} - {week_en_dia}]"
         elif semana_previa:
-            estado_badge = f" [{prog_previo}: {semana_previa} ➡️ Siguiente sugerida: {semana_objetivo_ex.split()[0]} {semana_objetivo_ex.split()[1]}]"
+            estado_badge = f" [{prog_previo}: {semana_previa} ➡️ Sugerida: {semana_objetivo_auto.split()[0]} {semana_objetivo_auto.split()[1]}]"
         else:
-            estado_badge = f" [Inicio de Ciclo ➡️ {semana_objetivo_ex.split()[0]} {semana_objetivo_ex.split()[1]}]"
+            estado_badge = f" [Inicio de Ciclo ➡️ {semana_objetivo_auto.split()[0]} {semana_objetivo_auto.split()[1]}]"
         
         header_title = f"{exercise} {f'({most_freq_unit})' if most_freq_unit else ''}{estado_badge}"
         
@@ -187,18 +194,20 @@ if not daily_df.empty:
                     st.rerun()
             
             with col_prog:
-                # Ocultamos los botones de programas si el ejercicio está en las categorías de exclusión o es de cardio neto
                 if not is_cardio_ex and not is_excluded_from_strength:
+                    # Determina qué semana usar solo al presionar el botón
+                    semana_a_cargar = semana_manual if semana_manual != "Automático" else semana_objetivo_auto
+                    
                     if programa_activo == "5/3/1 (Periodización)":
-                        btn_label = f"💡 Cargar 5/3/1 ({semana_objetivo_ex.split()[0]} {semana_objetivo_ex.split()[1]})"
+                        btn_label = f"💡 Cargar 5/3/1 ({semana_a_cargar.split()[0]} {semana_a_cargar.split()[1]})"
                     else:
                         btn_label = "💡 Cargar 5x5"
                     
                     if st.button(btn_label, key=f"btn_prog_{exercise}"):
                         if programa_activo == "5/3/1 (Periodización)":
-                            series_sugeridas = calcular_series_531(hist_ex_global, exercise, semana_objetivo_ex)
+                            series_sugeridas = calcular_series_531(hist_ex_global, exercise, semana_a_cargar)
                             prog_val = "5/3/1"
-                            week_val = semana_objetivo_ex
+                            week_val = semana_a_cargar
                         else:
                             series_sugeridas = calcular_series_5x5(hist_ex_global, exercise)
                             prog_val = "5x5"
@@ -264,7 +273,7 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
         st.warning("No hay categorías.")
 
 st.divider()
-with st.expander("🔄 Copiar rutina de otro día (con avance inteligente independiente)"):
+with st.expander("🔄 Copiar rutina de otro día (con avance inteligente)"):
     s_date = st.date_input("Fecha a copiar:", pd.to_datetime("today") - pd.Timedelta(days=1))
     s_date = pd.to_datetime(s_date)
     
@@ -291,13 +300,15 @@ with st.expander("🔄 Copiar rutina de otro día (con avance inteligente indepe
                     if auto_avanzar_531:
                         processed_dfs = []
                         for ex_name, group in new_entries.groupby('Exercise'):
-                            prog = group['Program'].iloc[0] if 'Program' in group.columns else None
                             cat_group_str = str(group['Category'].iloc[0] if 'Category' in group.columns else "").lower()
                             es_excluido = "alta repetición" in cat_group_str or "resistencia" in cat_group_str or "cardio" in cat_group_str
                             
-                            # Validamos que no sea una categoría excluida para auto-avanzar
-                            if prog == '5/3/1' and not es_excluido:
-                                last_week_copied = group['Week'].iloc[0] if 'Week' in group.columns else "Semana 1 (3x5)"
+                            mask_prog = (group['Program'] == '5/3/1') & (group['Week'].notna())
+                            prog_rows = group[mask_prog].copy()
+                            non_prog_rows = group[~mask_prog].copy()
+                            
+                            if not prog_rows.empty and not es_excluido:
+                                last_week_copied = prog_rows['Week'].iloc[0]
                                 secuencia = ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"]
                                 try:
                                     idx = secuencia.index(last_week_copied)
@@ -309,7 +320,7 @@ with st.expander("🔄 Copiar rutina de otro día (con avance inteligente indepe
                                 nuevas_sugerencias = calcular_series_531(hist_previo, ex_name, siguiente_semana)
                                 
                                 if nuevas_sugerencias:
-                                    base_row = group.iloc[0].to_dict()
+                                    base_row = prog_rows.iloc[0].to_dict()
                                     recalculated_rows = []
                                     for s in nuevas_sugerencias:
                                         r_copy = base_row.copy()
@@ -318,7 +329,12 @@ with st.expander("🔄 Copiar rutina de otro día (con avance inteligente indepe
                                         r_copy['Reps'] = s['Reps']
                                         r_copy['Week'] = siguiente_semana
                                         recalculated_rows.append(r_copy)
-                                    processed_dfs.append(pd.DataFrame(recalculated_rows))
+                                    
+                                    if not non_prog_rows.empty:
+                                        df_combinado = pd.concat([pd.DataFrame(recalculated_rows), non_prog_rows], ignore_index=True)
+                                        processed_dfs.append(df_combinado)
+                                    else:
+                                        processed_dfs.append(pd.DataFrame(recalculated_rows))
                                 else:
                                     processed_dfs.append(group)
                             else:
