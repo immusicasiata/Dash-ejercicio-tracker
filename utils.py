@@ -163,6 +163,21 @@ def obtener_siguiente_semana_531(df_historial, ejercicio):
     except ValueError:
         return "Semana 1 (3x5)"
 
+def obtener_estado_programa_ejercicio(df_historial, ejercicio):
+    """Devuelve el último programa y semana registrados para un ejercicio específico."""
+    if df_historial.empty or 'Program' not in df_historial.columns or 'Week' not in df_historial.columns:
+        return None, None
+    hist_ej = df_historial[(df_historial['Exercise'] == ejercicio) & (df_historial['Program'].notna())].dropna(subset=['Date'])
+    if hist_ej.empty:
+        return None, None
+    latest_date = hist_ej['Date'].max()
+    latest_entries = hist_ej[(hist_ej['Date'] == latest_date) & (hist_ej['Exercise'] == ejercicio)]
+    if latest_entries.empty:
+        return None, None
+    prog = latest_entries['Program'].iloc[0] if 'Program' in latest_entries.columns else None
+    week = latest_entries['Week'].iloc[0] if 'Week' in latest_entries.columns else None
+    return prog, week
+
 def calcular_series_531(df_historial, ejercicio, semana):
     if df_historial.empty:
         return []
@@ -212,18 +227,3 @@ def calcular_series_5x5(df_historial, ejercicio):
         series_sugeridas.append({"Weight": peso_objetivo, "Reps": 5})
         
     return series_sugeridas
-
-def obtener_estado_actual_programa(df):
-    """Devuelve el programa y la semana más recientes registrados en el historial."""
-    if df.empty or 'Program' not in df.columns or 'Week' not in df.columns:
-        return None, None
-    df_prog = df.dropna(subset=['Program', 'Date'])
-    if df_prog.empty:
-        return None, None
-    latest_date = df_prog['Date'].max()
-    latest_entries = df_prog[df_prog['Date'] == latest_date]
-    if latest_entries.empty:
-        return None, None
-    prog = latest_entries['Program'].dropna().iloc[0] if not latest_entries['Program'].dropna().empty else None
-    week = latest_entries['Week'].dropna().iloc[0] if not latest_entries['Week'].dropna().empty else None
-    return prog, week
