@@ -61,6 +61,11 @@ if not daily_df.empty:
         ex_df = daily_df[daily_df['Exercise'] == exercise].reset_index(drop=True)
         category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
         
+        # Filtro: ¿Es una categoría excluida de los programas de fuerza?
+        cat_str = str(category).lower()
+        is_excluded_from_strength = "alta repetición" in cat_str or "resistencia" in cat_str or "cardio" in cat_str
+        is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
+        
         hist_ex_global = df[(df['Exercise'] == exercise) & (df['Date'].dt.date < selected_date.date())]
         hist_ex = hist_ex_global.dropna(subset=['Weight', 'Reps'])
         
@@ -87,7 +92,10 @@ if not daily_df.empty:
         prog_en_dia = ex_df.iloc[0].get('Program')
         week_en_dia = ex_df.iloc[0].get('Week')
         
-        if pd.notna(prog_en_dia) and pd.notna(week_en_dia):
+        # Ajuste de títulos: No mostramos ciclos si están excluidos
+        if is_excluded_from_strength or is_cardio_ex:
+            estado_badge = ""
+        elif pd.notna(prog_en_dia) and pd.notna(week_en_dia):
             estado_badge = f" [{prog_en_dia} - {week_en_dia}]"
         elif semana_previa:
             estado_badge = f" [{prog_previo}: {semana_previa} ➡️ Siguiente sugerida: {semana_objetivo_ex.split()[0]} {semana_objetivo_ex.split()[1]}]"
@@ -163,8 +171,6 @@ if not daily_df.empty:
             
             st.write("")
             
-            is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
-            
             col_add, col_prog, col_del_ex = st.columns([1.3, 1.7, 1])
             
             with col_add:
@@ -181,7 +187,8 @@ if not daily_df.empty:
                     st.rerun()
             
             with col_prog:
-                if not is_cardio_ex:
+                # Ocultamos los botones de programas si el ejercicio está en las categorías de exclusión o es de cardio neto
+                if not is_cardio_ex and not is_excluded_from_strength:
                     if programa_activo == "5/3/1 (Periodización)":
                         btn_label = f"💡 Cargar 5/3/1 ({semana_objetivo_ex.split()[0]} {semana_objetivo_ex.split()[1]})"
                     else:
@@ -285,7 +292,11 @@ with st.expander("🔄 Copiar rutina de otro día (con avance inteligente indepe
                         processed_dfs = []
                         for ex_name, group in new_entries.groupby('Exercise'):
                             prog = group['Program'].iloc[0] if 'Program' in group.columns else None
-                            if prog == '5/3/1':
+                            cat_group_str = str(group['Category'].iloc[0] if 'Category' in group.columns else "").lower()
+                            es_excluido = "alta repetición" in cat_group_str or "resistencia" in cat_group_str or "cardio" in cat_group_str
+                            
+                            # Validamos que no sea una categoría excluida para auto-avanzar
+                            if prog == '5/3/1' and not es_excluido:
                                 last_week_copied = group['Week'].iloc[0] if 'Week' in group.columns else "Semana 1 (3x5)"
                                 secuencia = ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"]
                                 try:

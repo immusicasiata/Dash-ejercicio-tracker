@@ -137,22 +137,17 @@ def update_cell(row_id, col, key_name):
         save_data_local(current_df)
 
 def obtener_semana_objetivo_ejercicio(df, ejercicio, fecha_seleccionada):
-    """
-    Determina la semana correspondiente para un ejercicio de forma 100% independiente.
-    """
     if df.empty or 'Week' not in df.columns:
         return "Semana 1 (3x5)"
 
     fecha_sel_dt = pd.to_datetime(fecha_seleccionada).date()
-
-    # 1. Si el día actual ya tiene guardada una semana para este ejercicio, se respeta
     df_hoy = df[(df['Exercise'] == ejercicio) & (df['Date'].dt.date == fecha_sel_dt)]
+    
     if not df_hoy.empty and 'Week' in df_hoy.columns:
         semana_hoy = df_hoy['Week'].dropna()
         if not semana_hoy.empty:
             return semana_hoy.iloc[0]
 
-    # 2. Buscar únicamente en el historial anterior a la fecha seleccionada
     df_pasado = df[
         (df['Exercise'] == ejercicio) & 
         (df['Date'].dt.date < fecha_sel_dt) & 
@@ -165,12 +160,7 @@ def obtener_semana_objetivo_ejercicio(df, ejercicio, fecha_seleccionada):
     ultima_fecha = df_pasado['Date'].max()
     ultima_semana = df_pasado[df_pasado['Date'] == ultima_fecha]['Week'].iloc[0]
 
-    secuencia = [
-        "Semana 1 (3x5)",
-        "Semana 2 (3x3)",
-        "Semana 3 (5, 3, 1)",
-        "Semana 4 (Descarga)"
-    ]
+    secuencia = ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"]
 
     try:
         idx = secuencia.index(ultima_semana)
@@ -179,7 +169,6 @@ def obtener_semana_objetivo_ejercicio(df, ejercicio, fecha_seleccionada):
         return "Semana 1 (3x5)"
 
 def obtener_estado_programa_ejercicio(df, ejercicio, fecha_seleccionada=None):
-    """Devuelve el último programa y semana registrados previamente para un ejercicio específico."""
     if df.empty or 'Program' not in df.columns or 'Week' not in df.columns:
         return None, None
         
@@ -200,7 +189,6 @@ def obtener_estado_programa_ejercicio(df, ejercicio, fecha_seleccionada=None):
     return prog, week
 
 def obtener_estado_actual_programa(df):
-    """Devuelve el programa y semana global más recientes."""
     if df.empty or 'Program' not in df.columns or 'Week' not in df.columns:
         return None, None
     df_prog = df.dropna(subset=['Program', 'Date'])
@@ -218,7 +206,8 @@ def calcular_series_531(df_historial, ejercicio, semana):
     if df_historial.empty:
         return []
         
-    hist_ej = df_historial[df_historial['Exercise'] == ejercicio].dropna(subset=['Weight', 'Reps'])
+    # Se filtran series de más de 20 reps para evitar errores de cálculo de 1RM
+    hist_ej = df_historial[(df_historial['Exercise'] == ejercicio) & (df_historial['Reps'] <= 20)].dropna(subset=['Weight', 'Reps']).copy()
     if hist_ej.empty:
         return []
 
@@ -246,7 +235,8 @@ def calcular_series_5x5(df_historial, ejercicio):
     if df_historial.empty:
         return []
         
-    hist_ej = df_historial[df_historial['Exercise'] == ejercicio].dropna(subset=['Weight', 'Reps'])
+    # Se filtran series de más de 20 reps para evitar errores de cálculo de 1RM
+    hist_ej = df_historial[(df_historial['Exercise'] == ejercicio) & (df_historial['Reps'] <= 20)].dropna(subset=['Weight', 'Reps']).copy()
     if hist_ej.empty:
         return []
 
