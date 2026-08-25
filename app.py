@@ -86,13 +86,14 @@ if not daily_df.empty:
             for idx, row in ex_df.iterrows():
                 is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
                 
+                # Usamos directamente el índice 'idx' del DataFrame para que la clave sea única e inalterable
                 if is_cardio:
                     col1, col2, col_btn_del = st.columns([2.5, 2.5, 0.7])
                     curr_dist = format_clean(row['Distance'])
                     curr_time = str(row['Time']) if pd.notna(row['Time']) else ""
                     
-                    key_dist = f"dist_{idx}_{selected_date}"
-                    key_time = f"time_{idx}_{selected_date}"
+                    key_dist = f"dist_{idx}"
+                    key_time = f"time_{idx}"
                     
                     with col1:
                         st.number_input(
@@ -115,7 +116,11 @@ if not daily_df.empty:
                             label_visibility="collapsed"
                         )
                     with col_btn_del:
-                        if st.button("🗑️", key=f"del_c_{idx}_{selected_date}", help="Borrar serie"):
+                        if st.button("🗑️", key=f"del_c_{idx}", help="Borrar serie"):
+                            # Limpiamos del session_state solo la clave de la fila que estamos borrando
+                            for k in [key_dist, key_time]:
+                                if k in st.session_state:
+                                    del st.session_state[k]
                             df.drop(idx, inplace=True)
                             save_data_local(df)
                             st.rerun()
@@ -124,8 +129,8 @@ if not daily_df.empty:
                     curr_w = format_clean(row['Weight'])
                     curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                     
-                    key_w = f"w_{idx}_{selected_date}"
-                    key_r = f"r_{idx}_{selected_date}"
+                    key_w = f"w_{idx}"
+                    key_r = f"r_{idx}"
                     
                     with col_w:
                         st.number_input(
@@ -169,7 +174,11 @@ if not daily_df.empty:
                             st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
 
                     with col_btn_del:
-                        if st.button("🗑️", key=f"del_w_{idx}_{selected_date}", help="Borrar serie"):
+                        if st.button("🗑️", key=f"del_w_{idx}", help="Borrar serie"):
+                            # Limpiamos solo los inputs de esta fila específica de la memoria
+                            for k in [key_w, key_r]:
+                                if k in st.session_state:
+                                    del st.session_state[k]
                             df.drop(idx, inplace=True)
                             save_data_local(df)
                             st.rerun()
@@ -182,7 +191,7 @@ if not daily_df.empty:
             col_add, col_prog, col_del_ex = st.columns([1.3, 1.7, 1])
             
             with col_add:
-                if st.button(f"➕ Agregar serie", key=f"add_row_{exercise}_{selected_date}"):
+                if st.button(f"➕ Agregar serie", key=f"add_row_{exercise}"):
                     new_row = {
                         'Date': selected_date, 'Exercise': exercise, 'Category': category,
                         'Weight Unit': most_freq_unit if not is_cardio_ex else None
@@ -195,7 +204,7 @@ if not daily_df.empty:
                 if not is_cardio_ex:
                     btn_label = "💡 Cargar 5/3/1" if programa_activo == "5/3/1 (Periodización)" else "💡 Cargar 5x5"
                     
-                    if st.button(btn_label, key=f"btn_prog_{exercise}_{selected_date}"):
+                    if st.button(btn_label, key=f"btn_prog_{exercise}"):
                         historial_ejercicio = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())]
                         
                         if programa_activo == "5/3/1 (Periodización)":
@@ -221,7 +230,12 @@ if not daily_df.empty:
                             st.warning("No hay historial previo para este ejercicio para calcular los pesos.")
                             
             with col_del_ex:
-                if st.button(f"🗑️ Borrar Ejercicio", key=f"del_ex_{exercise}_{selected_date}", type="primary"):
+                if st.button(f"🗑️ Borrar Ejercicio", key=f"del_ex_{exercise}", type="primary"):
+                    # Limpiamos las llaves de session_state de todas las filas que pertenecían a este ejercicio
+                    for idx_ex in ex_df.index:
+                        for k in [f"w_{idx_ex}", f"r_{idx_ex}", f"dist_{idx_ex}", f"time_{idx_ex}"]:
+                            if k in st.session_state:
+                                del st.session_state[k]
                     df.drop(ex_df.index, inplace=True)
                     save_data_local(df)
                     st.rerun()
@@ -232,14 +246,14 @@ st.divider()
 with st.expander("➕ Agregar nuevo ejercicio al día"):
     existing_categories = sorted(df['Category'].dropna().unique().tolist()) if 'Category' in df.columns else []
     if existing_categories:
-        selected_category = st.selectbox("Categoría:", existing_categories, key=f"new_ex_cat_{selected_date}")
+        selected_category = st.selectbox("Categoría:", existing_categories, key="new_ex_cat")
         cat_history = df[df['Category'] == selected_category]['Exercise'].dropna().unique().tolist()
         options = sorted(list(set(cat_history))) + ["➕ Otro"]
-        chosen = st.selectbox("Ejercicio:", options, key=f"new_ex_name_{selected_date}")
-        name = st.text_input("Nombre:", key=f"custom_ex_{selected_date}") if chosen == "➕ Otro" else chosen
-        unit = st.selectbox("Unidad:", ["kg", "lbs", "Sin unidad"], key=f"new_unit_{selected_date}")
+        chosen = st.selectbox("Ejercicio:", options, key="new_ex_name")
+        name = st.text_input("Nombre:", key="custom_ex_name") if chosen == "➕ Otro" else chosen
+        unit = st.selectbox("Unidad:", ["kg", "lbs", "Sin unidad"], key="new_unit_select")
         
-        if st.button("Guardar e iniciar", key=f"btn_save_new_{selected_date}"):
+        if st.button("Guardar e iniciar", key="btn_save_new_ex"):
             if name.strip():
                 u = unit if unit != "Sin unidad" else None
                 df = pd.concat([df, pd.DataFrame([{'Date': selected_date, 'Exercise': name.strip(), 'Category': selected_category, 'Weight Unit': u}])], ignore_index=True)
@@ -265,7 +279,7 @@ with st.expander("🔄 Copiar rutina de otro día"):
             if not source_entries.empty:
                 st.write(f"Vista previa ({target_date.strftime('%d/%m/%Y')}):")
                 st.dataframe(source_entries[['Category', 'Exercise', 'Weight', 'Reps']].drop_duplicates(), use_container_width=True, hide_index=True)
-                if st.button("Copiar rutina seleccionada"):
+                if st.button("Copiar rutina seleccionada", key="btn_execute_copy"):
                     new_entries = source_entries.copy()
                     new_entries['Date'] = selected_date
                     df = pd.concat([df, new_entries], ignore_index=True)
