@@ -60,7 +60,8 @@ if not daily_df.empty:
     ordered_exercises = daily_df['Exercise'].unique()
     
     for exercise in ordered_exercises:
-        ex_df = daily_df[daily_df['Exercise'] == exercise].reset_index(drop=True)
+        # Filtramos directamente las filas correspondientes a este ejercicio en este día
+        ex_df = daily_df[(daily_df['Exercise'] == exercise)]
         category = ex_df.iloc[0]['Category'] if 'Category' in ex_df.columns else "Sin Categoría"
         
         hist_ex = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())].dropna(subset=['Weight', 'Reps'])
@@ -83,10 +84,8 @@ if not daily_df.empty:
         header_title = f"{exercise} {f'({most_freq_unit})' if most_freq_unit else ''}"
         with st.expander(header_title, expanded=True):
             
-            for i, row in ex_df.iterrows():
-                # Obtenemos el índice real en el DataFrame principal 'df' para actualizar/borrar correctamente
-                real_idx = df[(df['Date'].dt.date == selected_date.date()) & (df['Exercise'] == exercise)].index[i]
-                
+            # Iteramos usando directamente el índice real (idx) de cada fila en el DataFrame
+            for real_idx, row in ex_df.iterrows():
                 is_cardio = pd.notna(row.get('Distance')) or pd.notna(row.get('Time'))
                 
                 if is_cardio:
@@ -94,8 +93,8 @@ if not daily_df.empty:
                     curr_dist = format_clean(row['Distance'])
                     curr_time = str(row['Time']) if pd.notna(row['Time']) else ""
                     
-                    key_dist = f"dist_{exercise}_{i}"
-                    key_time = f"time_{exercise}_{i}"
+                    key_dist = f"dist_{real_idx}"
+                    key_time = f"time_{real_idx}"
                     
                     with col1:
                         st.number_input(
@@ -118,7 +117,7 @@ if not daily_df.empty:
                             label_visibility="collapsed"
                         )
                     with col_btn_del:
-                        if st.button("🗑️", key=f"del_c_{exercise}_{i}", help="Borrar serie"):
+                        if st.button("🗑️", key=f"del_c_{real_idx}", help="Borrar serie"):
                             for k in [key_dist, key_time]:
                                 if k in st.session_state:
                                     del st.session_state[k]
@@ -130,8 +129,9 @@ if not daily_df.empty:
                     curr_w = format_clean(row['Weight'])
                     curr_r = int(row['Reps']) if pd.notna(row['Reps']) else 0
                     
-                    key_w = f"w_{exercise}_{i}"
-                    key_r = f"r_{exercise}_{i}"
+                    # Usamos el índice real exacto como clave única inquebrantable
+                    key_w = f"w_{real_idx}"
+                    key_r = f"r_{real_idx}"
                     
                     with col_w:
                         st.number_input(
@@ -175,7 +175,7 @@ if not daily_df.empty:
                             st.markdown(f"<div style='padding-top: 8px; font-size: 0.85em;'>{badges_html}</div>", unsafe_allow_html=True)
 
                     with col_btn_del:
-                        if st.button("🗑️", key=f"del_w_{exercise}_{i}", help="Borrar serie"):
+                        if st.button("🗑️", key=f"del_w_{real_idx}", help="Borrar serie"):
                             for k in [key_w, key_r]:
                                 if k in st.session_state:
                                     del st.session_state[k]
@@ -231,8 +231,8 @@ if not daily_df.empty:
                             
             with col_del_ex:
                 if st.button(f"🗑️ Borrar Ejercicio", key=f"del_ex_{exercise}", type="primary"):
-                    for i_ex in range(len(ex_df)):
-                        for k in [f"w_{exercise}_{i_ex}", f"r_{exercise}_{i_ex}", f"dist_{exercise}_{i_ex}", f"time_{exercise}_{i_ex}"]:
+                    for idx_row in ex_df.index:
+                        for k in [f"w_{idx_row}", f"r_{idx_row}", f"dist_{idx_row}", f"time_{idx_row}"]:
                             if k in st.session_state:
                                 del st.session_state[k]
                     df.drop(ex_df.index, inplace=True)

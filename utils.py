@@ -19,7 +19,8 @@ def load_data():
             df = pd.read_parquet(LOCAL_FILE, engine='pyarrow')
             if 'Date' in df.columns:
                 df['Date'] = pd.to_datetime(df['Date'])
-            return df
+            # IMPORTANTE: Forzar índices limpios al cargar desde local
+            return df.dropna(how='all').reset_index(drop=True)
         except Exception:
             pass
 
@@ -40,31 +41,36 @@ def load_data():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 
+        # IMPORTANTE: Limpiar índices antes de guardar localmente
+        df = df.dropna(how='all').reset_index(drop=True)
         df.to_parquet(LOCAL_FILE, index=False, engine='pyarrow')
-        return df.dropna(how='all')
+        return df
     
     except Exception:
         return pd.DataFrame(columns=['Date', 'Category', 'Exercise', 'Weight', 'Reps', 'Distance', 'Time', 'Weight Unit'])
 
 def save_data_local(df):
-    """Guarda los cambios inmediatamente en el disco local del servidor."""
+    """Guarda los cambios inmediatamente en el servidor asegurando índices limpios."""
     numeric_cols = ['Weight', 'Reps', 'Distance']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
             
-    df.to_parquet(LOCAL_FILE, index=False, engine='pyarrow')
+    # IMPORTANTE: Reindexar antes de guardar para evitar desalineaciones en la interfaz
+    df_clean = df.reset_index(drop=True)
+    df_clean.to_parquet(LOCAL_FILE, index=False, engine='pyarrow')
     st.cache_data.clear()
 
 def sync_to_github(df):
-    """Envía el archivo local a GitHub."""
+    """Envía el archivo local a GitHub manteniendo la integridad de los índices."""
     try:
         repo = get_github_repo()
         file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
         branch = st.secrets["github"].get("branch", "main")
         
+        df_clean = df.reset_index(drop=True)
         buffer = io.BytesIO()
-        df.to_parquet(buffer, index=False, engine='pyarrow')
+        df_clean.to_parquet(buffer, index=False, engine='pyarrow')
         content_bytes = buffer.getvalue()
         
         try:
@@ -110,7 +116,7 @@ def format_clean(val):
         return 0.0
 
 def update_cell(idx, col, key_name):
-    """Actualiza una celda en el DataFrame local desde la sesión de Streamlit."""
+    """Actualiza una celda en el DataFrame local asegurando el índice correcto."""
     new_val = st.session_state.get(key_name)
     current_df = load_data()
     
@@ -122,8 +128,9 @@ def update_cell(idx, col, key_name):
     elif col == 'Time':
         new_val = str(new_val).strip() if new_val and str(new_val).strip() else None
         
-    current_df.loc[idx, col] = new_val
-    save_data_local(current_df)
+    if idx in current_df.index:
+        current_df.loc[idx, col] = new_val
+        save_data_local(current_df)
 
 def calcular_series_531(df_historial, ejercicio, semana):
     """Calcula las 3 series de 5/3/1 basándose en el 1RM histórico absoluto del ejercicio."""
