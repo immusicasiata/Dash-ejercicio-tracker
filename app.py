@@ -1,40 +1,37 @@
 import streamlit as st
 import pandas as pd
-# Importamos la función de cálculo desde utils
-from utils import load_data, save_data_local, sync_to_github, get_cached_date_summary, calcular_series_531
+from utils import (
+    load_data, 
+    save_data_local, 
+    sync_to_github, 
+    get_cached_date_summary, 
+    calcular_series_531, 
+    calcular_series_5x5, 
+    format_clean, 
+    update_cell
+)
 
 st.set_page_config(page_title="Panel de Entrenamiento", layout="wide")
 
-def format_clean(val):
-    try: 
-        return float(val)
-    except: 
-        return 0.0
-
-# Función de autoguardado LOCAL. Protege tus datos al instante sin saturar GitHub
-def update_cell(idx, col, key_name):
-    new_val = st.session_state.get(key_name)
-    current_df = load_data()
-    
-    if col in ['Weight', 'Reps', 'Distance']:
-        try:
-            new_val = float(new_val) if new_val is not None and float(new_val) > 0 else None
-        except (ValueError, TypeError):
-            new_val = None
-    elif col == 'Time':
-        new_val = str(new_val).strip() if new_val and str(new_val).strip() else None
-        
-    current_df.loc[idx, col] = new_val
-    save_data_local(current_df)
-
 # --- 1. CONFIGURACIÓN DEL ENTRENADOR EN LA BARRA LATERAL ---
 with st.sidebar:
-    st.header("⚙️ Entrenador 5/3/1")
-    st.markdown("Selecciona la semana para calcular las series sugeridas de tus levantamientos.")
-    semana_activa = st.radio(
-        "Fase del ciclo actual:",
-        ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"]
+    st.header("⚙️ Entrenador Inteligente")
+    
+    programa_activo = st.selectbox(
+        "Programa de fuerza:", 
+        ["5/3/1 (Periodización)", "5x5 (Progresión Lineal)"],
+        index=0
     )
+    
+    semana_activa = None
+    if programa_activo == "5/3/1 (Periodización)":
+        st.markdown("Selecciona la semana para calcular las series sugeridas.")
+        semana_activa = st.radio(
+            "Fase del ciclo actual:",
+            ["Semana 1 (3x5)", "Semana 2 (3x3)", "Semana 3 (5, 3, 1)", "Semana 4 (Descarga)"]
+        )
+    else:
+        st.info("El programa 5x5 buscará tu récord a 5 repeticiones y le sumará 2.5 kg para generar 5 series de 5 repeticiones.")
 
 st.title("📅 Panel de Entrenamiento")
 df = load_data()
@@ -50,7 +47,6 @@ if not daily_df.empty:
     with col_title:
         st.subheader(f"Registros del {selected_date.strftime('%d/%m/%Y')}")
     with col_save:
-        # Este botón toma la capa local segura y hace el commit hacia GitHub
         if st.button("☁️ Guardar Cambios en la Nube", type="primary", use_container_width=True):
             with st.spinner("Sincronizando con GitHub..."):
                 success, msg = sync_to_github(df)
@@ -181,11 +177,9 @@ if not daily_df.empty:
             st.write("")
             
             # --- 2. BOTONES DE ACCIÓN POR EJERCICIO ---
-            # Identificar si el ejercicio es de cardio para evitar mostrar sugerencias de 5/3/1
             is_cardio_ex = pd.notna(ex_df.iloc[0].get('Distance')) or pd.notna(ex_df.iloc[0].get('Time'))
             
-            # Ajustamos las columnas para dar espacio al nuevo botón del entrenador
-            col_add, col_531, col_del_ex = st.columns([1.3, 1.7, 1])
+            col_add, col_prog, col_del_ex = st.columns([1.3, 1.7, 1])
             
             with col_add:
                 if st.button(f"➕ Agregar serie", key=f"add_row_{exercise}_{selected_date}"):
@@ -197,14 +191,17 @@ if not daily_df.empty:
                     save_data_local(df)
                     st.rerun()
             
-            with col_531:
-                # El botón del entrenador solo aparece si NO es cardio
+            with col_prog:
                 if not is_cardio_ex:
-                    if st.button(f"💡 Cargar series 5/3/1", key=f"btn_531_{exercise}_{selected_date}"):
-                        # Extraemos el historial de la base general, excluyendo lo de hoy
+                    btn_label = "💡 Cargar 5/3/1" if programa_activo == "5/3/1 (Periodización)" else "💡 Cargar 5x5"
+                    
+                    if st.button(btn_label, key=f"btn_prog_{exercise}_{selected_date}"):
                         historial_ejercicio = df[(df['Exercise'] == exercise) & (df['Date'].dt.date != selected_date.date())]
                         
-                        series_sugeridas = calcular_series_531(historial_ejercicio, exercise, semana_activa)
+                        if programa_activo == "5/3/1 (Periodización)":
+                            series_sugeridas = calcular_series_531(historial_ejercicio, exercise, semana_activa)
+                        else:
+                            series_sugeridas = calcular_series_5x5(historial_ejercicio, exercise)
                         
                         if series_sugeridas:
                             nuevas_series = []
@@ -217,12 +214,11 @@ if not daily_df.empty:
                                     'Reps': s["Reps"],
                                     'Weight Unit': most_freq_unit
                                 })
-                            # Agregamos todas las series al dataframe principal de golpe
                             df = pd.concat([df, pd.DataFrame(nuevas_series)], ignore_index=True)
                             save_data_local(df)
                             st.rerun()
                         else:
-                            st.warning("No hay historial previo de Peso/Reps para calcular tu 1RM.")
+                            st.warning("No hay historial previo para este ejercicio para calcular los pesos.")
                             
             with col_del_ex:
                 if st.button(f"🗑️ Borrar Ejercicio", key=f"del_ex_{exercise}_{selected_date}", type="primary"):

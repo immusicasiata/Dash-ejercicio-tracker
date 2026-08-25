@@ -14,7 +14,6 @@ def get_github_repo():
 
 @st.cache_data
 def load_data():
-    # 1. Intentar cargar desde el archivo local (Ultra rápido y seguro contra recargas)
     if os.path.exists(LOCAL_FILE):
         try:
             df = pd.read_parquet(LOCAL_FILE, engine='pyarrow')
@@ -24,7 +23,6 @@ def load_data():
         except Exception:
             pass
 
-    # 2. Si no existe archivo local (ej. se reinició el servidor de Streamlit), traer desde GitHub
     try:
         repo = get_github_repo()
         file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
@@ -42,26 +40,24 @@ def load_data():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 
-        # Crear la copia local para futuras lecturas rápidas
         df.to_parquet(LOCAL_FILE, index=False, engine='pyarrow')
         return df.dropna(how='all')
     
     except Exception:
-        # 3. DataFrame por defecto si no existe en absoluto
         return pd.DataFrame(columns=['Date', 'Category', 'Exercise', 'Weight', 'Reps', 'Distance', 'Time', 'Weight Unit'])
 
 def save_data_local(df):
-    """Guarda los cambios inmediatamente en el disco local del servidor. No hace commits a GitHub."""
+    """Guarda los cambios inmediatamente en el disco local del servidor."""
     numeric_cols = ['Weight', 'Reps', 'Distance']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
             
     df.to_parquet(LOCAL_FILE, index=False, engine='pyarrow')
-    st.cache_data.clear() # Limpia caché para que la interfaz se actualice al instante
+    st.cache_data.clear()
 
 def sync_to_github(df):
-    """Envía el archivo local a GitHub. Se ejecuta solo al presionar el botón de la nube."""
+    """Envía el archivo local a GitHub."""
     try:
         repo = get_github_repo()
         file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
@@ -106,12 +102,31 @@ def get_cached_date_summary(df_cached):
         date_summary.append((d, f"{date_icon}{d.strftime('%d/%m/%Y')} — {cats_str}"))
     return date_summary
 
+def format_clean(val):
+    """Convierte un valor numérico a float limpio de forma segura."""
+    try: 
+        return float(val)
+    except: 
+        return 0.0
 
+def update_cell(idx, col, key_name):
+    """Actualiza una celda en el DataFrame local desde la sesión de Streamlit."""
+    new_val = st.session_state.get(key_name)
+    current_df = load_data()
+    
+    if col in ['Weight', 'Reps', 'Distance']:
+        try:
+            new_val = float(new_val) if new_val is not None and float(new_val) > 0 else None
+        except (ValueError, TypeError):
+            new_val = None
+    elif col == 'Time':
+        new_val = str(new_val).strip() if new_val and str(new_val).strip() else None
+        
+    current_df.loc[idx, col] = new_val
+    save_data_local(current_df)
 
 def calcular_series_531(df_historial, ejercicio, semana):
-    """
-    Calcula las 3 series de 5/3/1 basándose en el 1RM histórico absoluto del ejercicio.
-    """
+    """Calcula las 3 series de 5/3/1 basándose en el 1RM histórico absoluto del ejercicio."""
     if df_historial.empty:
         return []
         
@@ -119,12 +134,10 @@ def calcular_series_531(df_historial, ejercicio, semana):
     if hist_ej.empty:
         return []
 
-    # Estimación del 1RM histórico absoluto (Fórmula Brzycki)
     hist_ej['1RM_Est'] = hist_ej['Weight'] * (36 / (37 - hist_ej['Reps']))
     mejor_1rm = hist_ej['1RM_Est'].max()
-    tm = mejor_1rm * 0.90  # Training Max (90%)
+    tm = mejor_1rm * 0.90
 
-    # Mapeo de porcentajes y repeticiones por semana
     esquemas = {
         "Semana 1 (3x5)": ([0.65, 0.75, 0.85], [5, 5, 5]),
         "Semana 2 (3x3)": ([0.70, 0.80, 0.90], [3, 3, 3]),
@@ -136,7 +149,32 @@ def calcular_series_531(df_historial, ejercicio, semana):
     
     series_sugeridas = []
     for p, r in zip(porcentajes, reps):
-        peso_calc = round((tm * p) / 2.5) * 2.5  # Redondeo al tramo de 2.5 kg más cercano
+        peso_calc = round((tm * p) / 2.5) * 2.5
         series_sugeridas.append({"Weight": peso_calc, "Reps": r})
+        
+    return series_sugeridas
+
+def calcular_series_5x5(df_historial, ejercicio):
+    """Calcula las 5 series de 5 repeticiones basándose en la mejor marca a 5 reps + 2.5kg."""
+    if df_historial.empty:
+        return []
+        
+    hist_ej = df_historial[df_historial['Exercise'] == ejercicio].dropna(subset=['Weight', 'Reps'])
+    if hist_ej.empty:
+        return []
+
+    hist_ej['1RM_Est'] = hist_ej['Weight'] * (36 / (37 - hist_ej['Reps']))
+    mejor_1rm = hist_ej['1RM_Est'].max()
+    
+    max_peso_5reps = hist_ej[hist_ej['Reps'] >= 5]['Weight'].max()
+    
+    if pd.isna(max_peso_5reps): 
+        max_peso_5reps = mejor_1rm * 0.75
+        
+    peso_objetivo = max_peso_5reps + 2.5
+    
+    series_sugeridas = []
+    for _ in range(5):
+        series_sugeridas.append({"Weight": peso_objetivo, "Reps": 5})
         
     return series_sugeridas
