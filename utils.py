@@ -32,7 +32,7 @@ def load_data():
             parquet_bytes = contents.decoded_content
             df = pd.read_parquet(io.BytesIO(parquet_bytes), engine='pyarrow')
         except Exception:
-            df = pd.DataFrame(columns=['row_id', 'Date', 'Category', 'Exercise', 'Weight', 'Reps', 'Distance', 'Time', 'Weight Unit'])
+            df = pd.DataFrame(columns=['row_id', 'Date', 'Category', 'Exercise', 'Weight', 'Reps', 'Distance', 'Time', 'Weight Unit', 'Program', 'Week'])
 
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
@@ -42,14 +42,17 @@ def load_data():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Garantizar que todas las filas tengan un row_id único y válido
     if 'row_id' not in df.columns or df['row_id'].isnull().any() or df['row_id'].duplicated().any():
         df['row_id'] = [str(uuid.uuid4()) for _ in range(len(df))]
+        
+    # Asegurar columnas de programa y semana
+    for col_meta in ['Program', 'Week']:
+        if col_meta not in df.columns:
+            df[col_meta] = None
         
     return df.dropna(how='all').reset_index(drop=True)
 
 def save_data_local(df):
-    """Guarda los cambios localmente asegurando row_id y limpieza de índices."""
     if 'row_id' not in df.columns or df['row_id'].isnull().any():
         df['row_id'] = [str(uuid.uuid4()) for _ in range(len(df))]
         
@@ -63,7 +66,6 @@ def save_data_local(df):
     st.cache_data.clear()
 
 def sync_to_github(df):
-    """Envía el archivo local a GitHub."""
     try:
         repo = get_github_repo()
         file_path = st.secrets["github"].get("file_path", "entrenamientos.parquet")
@@ -119,7 +121,6 @@ def format_clean(val):
         return 0.0
 
 def update_cell(row_id, col, key_name):
-    """Actualiza una celda buscando directamente por el row_id único."""
     new_val = st.session_state.get(key_name)
     current_df = load_data()
     
@@ -135,6 +136,32 @@ def update_cell(row_id, col, key_name):
     if mask.any():
         current_df.loc[mask, col] = new_val
         save_data_local(current_df)
+
+def obtener_siguiente_semana_531(df_historial, ejercicio):
+    """Calcula automáticamente la siguiente semana del ciclo 5/3/1 basada en el historial."""
+    if df_historial.empty or 'Program' not in df_historial.columns or 'Week' not in df_historial.columns:
+        return "Semana 1 (3x5)"
+        
+    hist_ej = df_historial[(df_historial['Exercise'] == ejercicio) & (df_historial['Program'] == '5/3/1')].dropna(subset=['Date'])
+    if hist_ej.empty:
+        return "Semana 1 (3x5)"
+        
+    latest_date = hist_ej['Date'].max()
+    latest_entries = hist_ej[hist_ej['Date'] == latest_date]
+    last_week = latest_entries['Week'].dropna().iloc[0] if not latest_entries['Week'].dropna().empty else "Semana 1 (3x5)"
+    
+    secuencia = [
+        "Semana 1 (3x5)",
+        "Semana 2 (3x3)",
+        "Semana 3 (5, 3, 1)",
+        "Semana 4 (Descarga)"
+    ]
+    
+    try:
+        idx = secuencia.index(last_week)
+        return secuencia[(idx + 1) % len(secuencia)]
+    except ValueError:
+        return "Semana 1 (3x5)"
 
 def calcular_series_531(df_historial, ejercicio, semana):
     if df_historial.empty:
@@ -173,12 +200,10 @@ def calcular_series_5x5(df_historial, ejercicio):
         return []
 
     hist_ej['1RM_Est'] = hist_ej['Weight'] * (36 / (37 - hist_ej['Reps']))
-    mejor_1rm = hist_ej['1RM_Est'].max()
-    
     max_peso_5reps = hist_ej[hist_ej['Reps'] >= 5]['Weight'].max()
     
     if pd.isna(max_peso_5reps): 
-        max_peso_5reps = mejor_1rm * 0.75
+        max_peso_5reps = hist_ej['1RM_Est'].max() * 0.75
         
     peso_objetivo = max_peso_5reps + 2.5
     
@@ -187,3 +212,18 @@ def calcular_series_5x5(df_historial, ejercicio):
         series_sugeridas.append({"Weight": peso_objetivo, "Reps": 5})
         
     return series_sugeridas
+
+def obtener_estado_actual_programa(df):
+    """Devuelve el programa y la semana más recientes registrados en el historial."""
+    if df.empty or 'Program' not in df.columns or 'Week' not in df.columns:
+        return None, None
+    df_prog = df.dropna(subset=['Program', 'Date'])
+    if df_prog.empty:
+        return None, None
+    latest_date = df_prog['Date'].max()
+    latest_entries = df_prog[df_prog['Date'] == latest_date]
+    if latest_entries.empty:
+        return None, None
+    prog = latest_entries['Program'].dropna().iloc[0] if not latest_entries['Program'].dropna().empty else None
+    week = latest_entries['Week'].dropna().iloc[0] if not latest_entries['Week'].dropna().empty else None
+    return prog, week
