@@ -178,7 +178,12 @@ if not daily_df.empty:
             
             st.write("")
             
-            col_add, col_prog, col_del_ex = st.columns([1.3, 1.7, 1])
+            # Ajuste de layout dinámico para mostrar el control de sobrecarga
+            if not is_cardio_ex and not is_excluded_from_strength and programa_activo == "5/3/1 (Periodización)":
+                col_add, col_adj, col_prog, col_del_ex = st.columns([1.2, 1.2, 1.8, 1])
+            else:
+                col_add, col_prog, col_del_ex = st.columns([1.3, 1.7, 1])
+                col_adj = None
             
             with col_add:
                 if st.button(f"➕ Agregar serie", key=f"add_row_{exercise}"):
@@ -193,9 +198,13 @@ if not daily_df.empty:
                     save_data_local(df)
                     st.rerun()
             
+            ajuste_tm = 0.0
+            if col_adj is not None:
+                with col_adj:
+                    ajuste_tm = st.number_input("Ajuste TM", value=0.0, step=5.0, format="%.1f", key=f"adj_{exercise}", help="Ajusta libremente el Training Max base para continuar tu progresión (ej. +5, -5, +10)")
+            
             with col_prog:
                 if not is_cardio_ex and not is_excluded_from_strength:
-                    # Determina qué semana usar solo al presionar el botón
                     semana_a_cargar = semana_manual if semana_manual != "Automático" else semana_objetivo_auto
                     
                     if programa_activo == "5/3/1 (Periodización)":
@@ -205,7 +214,7 @@ if not daily_df.empty:
                     
                     if st.button(btn_label, key=f"btn_prog_{exercise}"):
                         if programa_activo == "5/3/1 (Periodización)":
-                            series_sugeridas = calcular_series_531(hist_ex_global, exercise, semana_a_cargar)
+                            series_sugeridas = calcular_series_531(hist_ex_global, exercise, semana_a_cargar, ajuste_tm)
                             prog_val = "5/3/1"
                             week_val = semana_a_cargar
                         else:
@@ -255,7 +264,6 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
         chosen = st.selectbox("Ejercicio:", options, key="new_ex_name")
         name = st.text_input("Nombre:", key="custom_ex_name") if chosen == "➕ Otro" else chosen
         
-        # Opciones actualizadas
         unit = st.selectbox("Unidad:", ["lbs", "Sin unidad", "Tiempo/Distancia"], key="new_unit_select")
         
         if st.button("Guardar e iniciar", key="btn_save_new_ex"):
@@ -267,7 +275,6 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
                     'Category': selected_category
                 }
                 
-                # Inicia como ejercicio de tiempo/distancia si se selecciona
                 if unit == "Tiempo/Distancia":
                     new_row['Distance'] = 0.0
                     new_row['Time'] = ""
@@ -325,6 +332,7 @@ with st.expander("🔄 Copiar rutina de otro día (con avance inteligente)"):
                                     siguiente_semana = "Semana 1 (3x5)"
                                 
                                 hist_previo = df[(df['Exercise'] == ex_name) & (df['Date'].dt.date < selected_date.date())]
+                                # Llamada normal ya que el incremento ahora por defecto es 0.0
                                 nuevas_sugerencias = calcular_series_531(hist_previo, ex_name, siguiente_semana)
                                 
                                 if nuevas_sugerencias:

@@ -202,7 +202,7 @@ def obtener_estado_actual_programa(df):
     week = latest_entries['Week'].dropna().iloc[0] if not latest_entries['Week'].dropna().empty else None
     return prog, week
 
-def calcular_series_531(df_historial, ejercicio, semana):
+def calcular_series_531(df_historial, ejercicio, semana, incremento_manual=0.0):
     if df_historial.empty:
         return []
         
@@ -213,7 +213,9 @@ def calcular_series_531(df_historial, ejercicio, semana):
 
     hist_ej['1RM_Est'] = hist_ej['Weight'] * (36 / (37 - hist_ej['Reps']))
     mejor_1rm = hist_ej['1RM_Est'].max()
-    tm = mejor_1rm * 0.90
+    
+    # Se aplica el ajuste manual de sobrecarga al TM base
+    tm = (mejor_1rm * 0.90) + incremento_manual
 
     esquemas = {
         "Semana 1 (3x5)": ([0.65, 0.75, 0.85], [5, 5, 5]),
@@ -227,6 +229,7 @@ def calcular_series_531(df_historial, ejercicio, semana):
     series_sugeridas = []
     for p, r in zip(porcentajes, reps):
         peso_calc = round((tm * p) / 2.5) * 2.5
+        peso_calc = max(0.0, peso_calc) # Previene pesos negativos si se usa un descuento agresivo
         series_sugeridas.append({"Weight": peso_calc, "Reps": r})
         
     return series_sugeridas
@@ -235,7 +238,6 @@ def calcular_series_5x5(df_historial, ejercicio):
     if df_historial.empty:
         return []
         
-    # Se filtran series de más de 20 reps para evitar errores de cálculo de 1RM
     hist_ej = df_historial[(df_historial['Exercise'] == ejercicio) & (df_historial['Reps'] <= 20)].dropna(subset=['Weight', 'Reps']).copy()
     if hist_ej.empty:
         return []
