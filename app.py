@@ -254,18 +254,26 @@ with st.expander("➕ Agregar nuevo ejercicio al día"):
         options = sorted(list(set(cat_history))) + ["➕ Otro"]
         chosen = st.selectbox("Ejercicio:", options, key="new_ex_name")
         name = st.text_input("Nombre:", key="custom_ex_name") if chosen == "➕ Otro" else chosen
-        unit = st.selectbox("Unidad:", ["kg", "lbs", "Sin unidad"], key="new_unit_select")
+        
+        # Opciones actualizadas
+        unit = st.selectbox("Unidad:", ["lbs", "Sin unidad", "Tiempo/Distancia"], key="new_unit_select")
         
         if st.button("Guardar e iniciar", key="btn_save_new_ex"):
             if name.strip():
-                u = unit if unit != "Sin unidad" else None
                 new_row = {
                     'row_id': str(uuid.uuid4()),
                     'Date': selected_date, 
                     'Exercise': name.strip(), 
-                    'Category': selected_category, 
-                    'Weight Unit': u
+                    'Category': selected_category
                 }
+                
+                # Inicia como ejercicio de tiempo/distancia si se selecciona
+                if unit == "Tiempo/Distancia":
+                    new_row['Distance'] = 0.0
+                    new_row['Time'] = ""
+                else:
+                    new_row['Weight Unit'] = unit if unit != "Sin unidad" else None
+                
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                 save_data_local(df)
                 st.rerun()
